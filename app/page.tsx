@@ -1,5 +1,8 @@
-import Dashboard from "./Dashboard";
+import { getDashboardData } from "../db/queries";
+import ManagementApp from "./ManagementApp";
 
-export default function Home() {
-  return <Dashboard />;
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  return <ManagementApp initialData={await getDashboardData()} />;
 }

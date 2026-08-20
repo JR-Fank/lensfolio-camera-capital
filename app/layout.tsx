@@ -19,9 +19,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = rawHost.split(",")[0].trim();
   const protocol = (requestHeaders.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https")).split(",")[0].trim();
   const baseUrl = `${protocol}://${host}`;
-  const title = "Lensfolio · 相机投资组合";
-  const description = "管理相机采购成本、物流批次、落地成本与潜在投资回报的私人 BI 看板。";
-  const image = `${baseUrl}/og.png`;
+  const title = "Lensfolio · 相机投资管理系统";
+  const description = "持续管理相机采购、物流、维修、闲鱼估值、销售与真实投资回报。";
+  const image = `${baseUrl}/og-system.png`;
 
   return {
     title,
@@ -31,7 +31,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       type: "website",
       locale: "zh_CN",
-      images: [{ url: image, width: 1731, height: 909, alt: "Lensfolio 相机投资组合" }],
+      images: [{ url: image, width: 1672, height: 941, alt: "Lensfolio 相机投资管理系统" }],
     },
     twitter: { card: "summary_large_image", title, description, images: [image] },
   };

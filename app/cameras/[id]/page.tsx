@@ -1,28 +1,23 @@
 import type { Metadata } from "next";
-import CameraDetail from "./CameraDetail";
-import { seedCameras } from "../../data";
+import { notFound } from "next/navigation";
+import { getDashboardData, getCameraById } from "../../../db/queries";
+import ManagementApp from "../../ManagementApp";
 
-type DetailPageProps = { params: Promise<{ id: string }> };
+export const dynamic = "force-dynamic";
 
-export async function generateMetadata({ params }: DetailPageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const camera = seedCameras.find((item) => item.id === id);
-  const title = camera ? `${camera.brand} ${camera.model} · 相机资产详情` : "相机资产详情";
-  const description = camera
-    ? `${camera.brand} ${camera.model} 的采购成本、物流节点、落地成本与潜在回报。`
-    : "Lensfolio 本地新增相机资产详情。";
-
+  const camera = await getCameraById(id);
+  if (!camera) return { title: "相机记录未找到 · Lensfolio" };
   return {
-    title,
-    description,
-    openGraph: { title, description, images: [] },
-    twitter: { card: "summary", title, description, images: [] },
+    title: `${camera.brand} ${camera.model} · 相机投资档案`,
+    description: `${camera.brand} ${camera.model} 的真实成本、市场估值、维修记录与退出回报。`,
   };
 }
 
-export default async function DetailPage({ params }: DetailPageProps) {
+export default async function CameraPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const camera = seedCameras.find((item) => item.id === id) ?? null;
-  return <CameraDetail id={id} initialCamera={camera} />;
+  const data = await getDashboardData();
+  if (!data.assets.some((asset) => asset.id === id)) notFound();
+  return <ManagementApp initialData={data} section="assets" selectedAssetId={id} />;
 }
-
