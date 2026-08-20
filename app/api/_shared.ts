@@ -40,3 +40,12 @@ export function slug(value: string) {
     .slice(0, 42);
   return `${base || "camera"}-${crypto.randomUUID().slice(0, 8)}`;
 }
+
+export function valuationConfidence(sampleSize: number, low: number, median: number, high: number) {
+  let score = sampleSize >= 50 ? 0.9 : sampleSize >= 20 ? 0.8 : sampleSize >= 10 ? 0.65 : sampleSize >= 5 ? 0.5 : 0.3;
+  const spread = median > 0 ? (high - low) / median : 1;
+  if (spread > 0.6) score -= 0.2;
+  else if (spread > 0.35) score -= 0.1;
+  if (low <= 0 || high <= 0) score -= 0.1;
+  return Math.round(Math.max(0.2, Math.min(1, score)) * 10) / 10;
+}

@@ -8,6 +8,13 @@
       "when": 1787232780964,
       "tag": "0000_useful_longshot",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787237122747,
+      "tag": "0001_fantastic_trauma",
+      "breakpoints": true
     }
   ]
 }

@@ -90,11 +90,14 @@ export async function fetchJapanPostTracking(trackingNumber: string) {
 
 export async function refreshLogisticsTracking(db: D1Database, logisticsOrderId: string) {
   const order = await db
-    .prepare("SELECT id, tracking_number FROM logistics_orders WHERE id = ? LIMIT 1")
+    .prepare("SELECT id, tracking_number, carrier FROM logistics_orders WHERE id = ? LIMIT 1")
     .bind(logisticsOrderId)
-    .first<{ id: string; tracking_number: string | null }>();
+    .first<{ id: string; tracking_number: string | null; carrier: string }>();
 
   if (!order?.tracking_number) throw new Error("该物流订单尚未填写国际单号");
+  if (!order.carrier.includes("日本邮政") && !order.carrier.includes("EMS")) {
+    throw new Error("当前自动追踪仅支持日本邮政 EMS；DHL / FedEx 可先保存单号并人工更新");
+  }
 
   try {
     const result = await fetchJapanPostTracking(order.tracking_number);
@@ -148,6 +151,7 @@ export async function refreshDueTracking(db: D1Database) {
   const due = await db.prepare(`
     SELECT id FROM logistics_orders
     WHERE tracking_number IS NOT NULL
+      AND (carrier LIKE '%日本邮政%' OR carrier LIKE '%EMS%')
       AND status NOT IN ('已签收', '退回寄件人')
       AND (last_checked_at IS NULL OR datetime(last_checked_at) <= datetime('now', '-24 hours'))
     ORDER BY COALESCE(last_checked_at, '1970-01-01') ASC

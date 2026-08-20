@@ -46,6 +46,12 @@ before(async () => {
     "--persist-to", stateDirectory,
     "--file", "drizzle/0000_useful_longshot.sql",
   ], { cwd: root, stdio: "ignore" });
+  execFileSync(wrangler, [
+    "d1", "execute", "DB", "--local",
+    "--config", "dist/server/wrangler.json",
+    "--persist-to", stateDirectory,
+    "--file", "drizzle/0001_fantastic_trauma.sql",
+  ], { cwd: root, stdio: "ignore" });
 
   const port = await freePort();
   baseUrl = `http://127.0.0.1:${port}`;
@@ -74,7 +80,8 @@ test("server-renders the database-backed investor dashboard", async () => {
   assert.match(html, /¥13,831/);
   assert.match(html, /当前市场估值/);
   assert.match(html, /¥17,250/);
-  assert.match(html, /组合价值差/);
+  assert.match(html, /资金占比分布/);
+  assert.match(html, /ROI 排行/);
   assert.match(html, /Contax/);
   assert.doesNotMatch(html, /localStorage|seedCameras|SkeletonPreview/i);
 });
@@ -93,6 +100,12 @@ test("server-renders logistics and record-specific asset details", async () => {
   assert.match(detailHtml, /<title>Nikon 28Ti · 相机投资档案<\/title>/i);
   assert.match(detailHtml, /¥6,603/);
   assert.match(detailHtml, /机器档案/);
+
+  const buyDecision = await fetch(`${baseUrl}/buy-decision`);
+  assert.equal(buyDecision.status, 200);
+  const buyDecisionHtml = await buyDecision.text();
+  assert.match(buyDecisionHtml, /建议最高买入/);
+  assert.match(buyDecisionHtml, /偏贵，不建议/);
 });
 
 test("packages persistence migration, scheduled refresh, and social artwork", async () => {
@@ -100,6 +113,7 @@ test("packages persistence migration, scheduled refresh, and social artwork", as
   assert.equal(workerConfig.d1_databases[0].binding, "DB");
   assert.deepEqual(workerConfig.triggers.crons, ["0 1 * * *"]);
   await access(path.join(root, "dist/.openai/drizzle/0000_useful_longshot.sql"));
+  await access(path.join(root, "dist/.openai/drizzle/0001_fantastic_trauma.sql"));
   await access(path.join(root, "public/og-system.png"));
   await assert.rejects(access(path.join(root, "app/data.ts")));
 });
