@@ -1,0 +1,3 @@
+-- Phase 2A intentionally seeds no rows.
+-- Database tests create fictional fixtures inside transactions and roll them back.
+-- Production Lensfolio assets must only be introduced by the later import phase.
