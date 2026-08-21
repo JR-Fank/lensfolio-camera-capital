@@ -1,7 +1,10 @@
 import { getD1 } from "../../../db";
-import { jsonError, numberValue, readObject, slug, text, valuationConfidence } from "../_shared";
+import { jsonError, numberValue, readObject, slug, text, valuationConfidence, writeAccessError } from "../_shared";
 
 export async function POST(request: Request) {
+  const accessError = writeAccessError(request);
+  if (accessError) return accessError;
+
   try {
     const body = await readObject(request);
     const brand = text(body.brand, "品牌");
@@ -101,6 +104,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const accessError = writeAccessError(request);
+  if (accessError) return accessError;
+
   try {
     const body = await readObject(request);
     const id = text(body.id, "相机");

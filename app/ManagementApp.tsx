@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import type { AssetView, DashboardData, LogisticsView } from "../db/queries";
+import { MIGRATION_PROTECTION_MESSAGE } from "../lib/migration-protection";
 
 type Section = "dashboard" | "assets" | "logistics" | "repairs" | "sales" | "buy-decision" | "analysis";
 type ModalKind = "asset" | "repair" | "valuation" | "sale" | "logistics" | "expense" | "status" | null;
@@ -55,6 +56,7 @@ export default function ManagementApp({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const refreshedTracking = useRef(false);
+  const migrationReadOnly = data.migrationReadOnly;
   const selectedAsset = selectedAssetId ? data.assets.find((asset) => asset.id === selectedAssetId) : undefined;
 
   const reload = async () => {
@@ -64,13 +66,13 @@ export default function ManagementApp({
   };
 
   useEffect(() => {
-    if (refreshedTracking.current || !["dashboard", "logistics"].includes(section)) return;
+    if (migrationReadOnly || refreshedTracking.current || !["dashboard", "logistics"].includes(section)) return;
     refreshedTracking.current = true;
     fetch("/api/logistics/refresh-due", { method: "POST" })
       .then((response) => response.ok ? response.json() : null)
       .then((result) => result?.outcomes?.some((item: { ok: boolean }) => item.ok) ? reload() : null)
       .catch(() => undefined);
-  }, [section]);
+  }, [migrationReadOnly, section]);
 
   useEffect(() => {
     if (!modal) return;
@@ -80,6 +82,7 @@ export default function ManagementApp({
   }, [modal]);
 
   const open = (kind: Exclude<ModalKind, null>, id?: string) => {
+    if (migrationReadOnly) return;
     if (id) setCameraId(id);
     setNotice("");
     setModal(kind);
@@ -87,6 +90,10 @@ export default function ManagementApp({
 
   const submit = async (endpoint: string, event: FormEvent<HTMLFormElement>, method = "POST") => {
     event.preventDefault();
+    if (migrationReadOnly) {
+      setNotice(MIGRATION_PROTECTION_MESSAGE);
+      return;
+    }
     setBusy(true);
     setNotice("");
     const form = new FormData(event.currentTarget);
@@ -112,6 +119,10 @@ export default function ManagementApp({
   };
 
   const refreshTracking = async (order: LogisticsView) => {
+    if (migrationReadOnly) {
+      setNotice(MIGRATION_PROTECTION_MESSAGE);
+      return;
+    }
     setBusy(true);
     setNotice(`正在查询 ${order.trackingNumber}…`);
     try {
@@ -158,15 +169,15 @@ export default function ManagementApp({
           ))}
         </nav>
         <div className="rail-status">
-          <i /><span>DATABASE ONLINE</span>
-          <small>D1 · 持久化存储</small>
+          <i /><span>{migrationReadOnly ? "MIGRATION PROTECTION" : "DATABASE ONLINE"}</span>
+          <small>{migrationReadOnly ? "READ ONLY · D1 FROZEN" : "D1 · 持久化存储"}</small>
         </div>
       </aside>
 
       <main className="workspace">
         <header className="mobile-bar">
           <Link href="/" className="mini-mark">LF</Link><span>{copy.title}</span>
-          <button type="button" onClick={() => open("asset")}>＋</button>
+          {!migrationReadOnly && <button type="button" onClick={() => open("asset")}>＋</button>}
         </header>
         <header className="page-head">
           <div>
@@ -175,10 +186,11 @@ export default function ManagementApp({
             <p>{copy.description}</p>
           </div>
           <div className="head-meta">
-            <span><i /> LIVE LEDGER</span>
+            <span><i /> {migrationReadOnly ? "READ ONLY" : "LIVE LEDGER"}</span>
             <small>刷新于 {new Date(data.refreshedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</small>
           </div>
         </header>
+        {migrationReadOnly && <div className="migration-banner" role="status"><strong>Migration Protection Mode</strong><span>{MIGRATION_PROTECTION_MESSAGE}</span></div>}
         {notice && <div className={`notice ${notice.includes("失败") || notice.includes("请") ? "error" : ""}`} role="status">{notice}</div>}
         {page}
         <footer className="system-footer">
@@ -187,7 +199,7 @@ export default function ManagementApp({
         </footer>
       </main>
 
-      {modal && (
+      {modal && !migrationReadOnly && (
         <div className="modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setModal(null)}>
           <div className="record-modal" role="dialog" aria-modal="true" aria-label="新增记录">
             <button className="modal-close" type="button" onClick={() => setModal(null)} aria-label="关闭">×</button>
@@ -245,9 +257,9 @@ function DashboardView({ data, open }: { data: DashboardData; open: (kind: Exclu
         </ol>
       </section>
 
-      <SectionTitle kicker="POSITION MONITOR" title="核心仓位" action={<button className="text-action" type="button" onClick={() => open("asset")}>＋ 新增机器</button>} />
+      <SectionTitle kicker="POSITION MONITOR" title="核心仓位" action={!data.migrationReadOnly ? <button className="text-action" type="button" onClick={() => open("asset")}>＋ 新增机器</button> : undefined} />
       <div className="asset-card-grid">
-        {data.assets.slice(0, 3).map((asset) => <InvestmentCard asset={asset} open={open} key={asset.id} />)}
+        {data.assets.slice(0, 3).map((asset) => <InvestmentCard asset={asset} open={open} readOnly={data.migrationReadOnly} key={asset.id} />)}
       </div>
       <div className="view-all"><Link href="/assets">查看全部 {data.assets.length} 台资产 →</Link></div>
     </>
@@ -313,16 +325,16 @@ function AssetsView({ data, open }: { data: DashboardData; open: (kind: Exclude<
     <>
       <div className="toolbar-row">
         <div className="position-summary"><span>持有中 <b>{data.assets.filter((asset) => asset.lifecycleStatus !== "已出售").length}</b></span><span>待检测 <b>{data.assets.filter((asset) => asset.repairStatus === "未检测").length}</b></span><span>可出售 <b>{data.assets.filter((asset) => asset.lifecycleStatus === "可出售").length}</b></span></div>
-        <button className="primary-action" type="button" onClick={() => open("asset")}>＋ 新增机器</button>
+        {!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("asset")}>＋ 新增机器</button>}
       </div>
       <div className="asset-card-grid wide">
-        {data.assets.map((asset) => <InvestmentCard asset={asset} open={open} key={asset.id} />)}
+        {data.assets.map((asset) => <InvestmentCard asset={asset} open={open} readOnly={data.migrationReadOnly} key={asset.id} />)}
       </div>
     </>
   );
 }
 
-function InvestmentCard({ asset, open }: { asset: AssetView; open: (kind: Exclude<ModalKind, null>, id?: string) => void }) {
+function InvestmentCard({ asset, open, readOnly }: { asset: AssetView; open: (kind: Exclude<ModalKind, null>, id?: string) => void; readOnly: boolean }) {
   const normalRoi = asset.trueCost ? asset.normalProfit / asset.trueCost * 100 : 0;
   const confidence = Math.max(0, Math.min(5, Math.round(asset.valuationConfidence * 5)));
   return (
@@ -355,7 +367,7 @@ function InvestmentCard({ asset, open }: { asset: AssetView; open: (kind: Exclud
       </div>
       <footer>
         <span>{asset.holdingDays} 天持有 · {asset.lifecycleStatus}</span>
-        <div><button type="button" onClick={() => open("valuation", asset.id)}>更新估价</button><Link href={`/cameras/${asset.id}`}>机器详情 →</Link></div>
+        <div>{!readOnly && <button type="button" onClick={() => open("valuation", asset.id)}>更新估价</button>}<Link href={`/cameras/${asset.id}`}>机器详情 →</Link></div>
       </footer>
     </article>
   );
@@ -369,7 +381,7 @@ function LogisticsViewPage({ data, open, refreshTracking, busy }: { data: Dashbo
   const totalUnits = actual.reduce((sum, order) => sum + order.itemCount, 0);
   return (
     <>
-      <div className="toolbar-row"><div className="position-summary"><span>追踪中 <b>{data.logistics.filter((order) => order.trackingNumber && order.status !== "已签收").length}</b></span><span>总批次 <b>{data.logistics.length}</b></span></div><button className="primary-action" type="button" onClick={() => open("logistics")}>＋ 新增物流单</button></div>
+      <div className="toolbar-row"><div className="position-summary"><span>追踪中 <b>{data.logistics.filter((order) => order.trackingNumber && order.status !== "已签收").length}</b></span><span>总批次 <b>{data.logistics.length}</b></span></div>{!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("logistics")}>＋ 新增物流单</button>}</div>
       <section className="operating-metrics">
         <Metric label="EMS 平均速度" value={avgDays ? `${number(avgDays, 1)} 天` : "—"} note="国际发货至最新节点" compact />
         <Metric label="EMS 平均成本 / kg" value={totalWeight ? cny(totalCost / (totalWeight / 1000)) : "—"} note="按实际计费重量" compact />
@@ -413,13 +425,13 @@ function LogisticsViewPage({ data, open, refreshTracking, busy }: { data: Dashbo
               <span>{order.lastCheckedAt ? `上次查询 ${date(order.lastCheckedAt)}` : "尚未自动查询"}{order.trackingError ? ` · ${order.trackingError}` : ""}</span>
               <div>
                 {order.trackingNumber && (order.carrier.includes("EMS") || order.carrier.includes("日本邮政")) && <a href={`https://trackings.post.japanpost.jp/services/srv/search/direct?reqCodeNo1=${order.trackingNumber}&searchKind=S004&locale=en`} target="_blank" rel="noreferrer">官方查询 ↗</a>}
-                {order.trackingNumber && (order.carrier.includes("EMS") || order.carrier.includes("日本邮政")) && <button type="button" disabled={busy} onClick={() => refreshTracking(order)}>立即同步</button>}
+                {!data.migrationReadOnly && order.trackingNumber && (order.carrier.includes("EMS") || order.carrier.includes("日本邮政")) && <button type="button" disabled={busy} onClick={() => refreshTracking(order)}>立即同步</button>}
               </div>
             </footer>
           </article>
         ))}
       </div>
-      <p className="source-note">追踪数据来自日本邮政公开查询页面，系统每天 09:00（上海时间）刷新未完成包裹；进入物流页也会检查超过 24 小时未更新的记录。</p>
+      <p className="source-note">{data.migrationReadOnly ? "迁移保护期间，自动物流更新与状态变化已暂停。" : "追踪数据来自日本邮政公开查询页面，系统每天 09:00（上海时间）刷新未完成包裹；进入物流页也会检查超过 24 小时未更新的记录。"}</p>
     </>
   );
 }
@@ -428,11 +440,11 @@ function RepairsView({ data, open }: { data: DashboardData; open: (kind: Exclude
   const statuses = ["未检测", "正常", "待维修", "已维修"];
   return (
     <>
-      <div className="toolbar-row"><div className="position-summary"><span>维修成本 <b>{cny(data.summary.repairCost)}</b></span><span>记录 <b>{data.repairs.length}</b></span></div><button className="primary-action" type="button" onClick={() => open("repair")}>＋ 新增维修记录</button></div>
+      <div className="toolbar-row"><div className="position-summary"><span>维修成本 <b>{cny(data.summary.repairCost)}</b></span><span>记录 <b>{data.repairs.length}</b></span></div>{!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("repair")}>＋ 新增维修记录</button>}</div>
       <div className="condition-board">{statuses.map((status) => <div key={status}><small>{status}</small><strong>{data.assets.filter((asset) => asset.repairStatus === status).length}</strong><p>{data.assets.filter((asset) => asset.repairStatus === status).map((asset) => asset.model).join(" · ") || "暂无"}</p></div>)}</div>
       <SectionTitle kicker="SERVICE LEDGER" title="维修记录" />
       <div className="data-table-wrap"><table className="system-table"><thead><tr><th>日期</th><th>机器</th><th>问题 / 项目</th><th>维修商</th><th>费用</th><th>价值变化</th><th>结果</th></tr></thead><tbody>
-        {data.repairs.length ? data.repairs.map((repair) => <tr key={repair.id}><td>{repair.repairDate}</td><td><button className="table-link" onClick={() => open("repair", repair.cameraId)} type="button">{repair.cameraName}</button></td><td>{repair.problem}<small className="cell-note">{repair.workPerformed}</small></td><td>{repair.vendor || "—"}</td><td>{cny(repair.costCny)}</td><td className={repair.valueChangeCny >= 0 ? "gain" : "loss"}>{repair.valueBeforeCny || repair.valueAfterCny ? signed(repair.valueChangeCny) : "—"}</td><td><span className="table-status">{repair.resultingStatus}</span></td></tr>) : <tr><td colSpan={7} className="empty-cell">尚无维修记录。检测结果也可以用 0 元维修记录保存。</td></tr>}
+        {data.repairs.length ? data.repairs.map((repair) => <tr key={repair.id}><td>{repair.repairDate}</td><td>{data.migrationReadOnly ? repair.cameraName : <button className="table-link" onClick={() => open("repair", repair.cameraId)} type="button">{repair.cameraName}</button>}</td><td>{repair.problem}<small className="cell-note">{repair.workPerformed}</small></td><td>{repair.vendor || "—"}</td><td>{cny(repair.costCny)}</td><td className={repair.valueChangeCny >= 0 ? "gain" : "loss"}>{repair.valueBeforeCny || repair.valueAfterCny ? signed(repair.valueChangeCny) : "—"}</td><td><span className="table-status">{repair.resultingStatus}</span></td></tr>) : <tr><td colSpan={7} className="empty-cell">尚无维修记录。检测结果也可以用 0 元维修记录保存。</td></tr>}
       </tbody></table></div>
     </>
   );
@@ -441,9 +453,9 @@ function RepairsView({ data, open }: { data: DashboardData; open: (kind: Exclude
 function SalesView({ data, open }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>, id?: string) => void }) {
   return (
     <>
-      <div className="toolbar-row"><div className="position-summary"><span>组合预计售价 <b>{cny(data.summary.currentMarketValue)}</b></span><span>已实现利润 <b>{signed(data.summary.realizedProfit)}</b></span></div><button className="primary-action" type="button" onClick={() => open("sale")}>＋ 记录出售</button></div>
-      <SectionTitle kicker="MARKET MARKS" title="闲鱼估价" action={<button className="text-action" type="button" onClick={() => open("valuation")}>＋ 更新估价</button>} />
-      <div className="valuation-grid">{data.assets.map((asset) => <article key={asset.id}><header><span>{asset.brand}</span><h3>{asset.model}</h3></header><div><small>区间下限</small><b>{cny(asset.marketLowCny)}</b></div><div><small>市场中位</small><b>{cny(asset.marketMedianCny)}</b></div><div><small>区间上限</small><b>{cny(asset.marketHighCny)}</b></div><footer><span>{asset.valuationSampleSize || 0} 条 · 可信 {Math.round(asset.valuationConfidence * 100)}%</span><button type="button" onClick={() => open("valuation", asset.id)}>更新</button></footer></article>)}</div>
+      <div className="toolbar-row"><div className="position-summary"><span>组合预计售价 <b>{cny(data.summary.currentMarketValue)}</b></span><span>已实现利润 <b>{signed(data.summary.realizedProfit)}</b></span></div>{!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("sale")}>＋ 记录出售</button>}</div>
+      <SectionTitle kicker="MARKET MARKS" title="闲鱼估价" action={!data.migrationReadOnly ? <button className="text-action" type="button" onClick={() => open("valuation")}>＋ 更新估价</button> : undefined} />
+      <div className="valuation-grid">{data.assets.map((asset) => <article key={asset.id}><header><span>{asset.brand}</span><h3>{asset.model}</h3></header><div><small>区间下限</small><b>{cny(asset.marketLowCny)}</b></div><div><small>市场中位</small><b>{cny(asset.marketMedianCny)}</b></div><div><small>区间上限</small><b>{cny(asset.marketHighCny)}</b></div><footer><span>{asset.valuationSampleSize || 0} 条 · 可信 {Math.round(asset.valuationConfidence * 100)}%</span>{!data.migrationReadOnly && <button type="button" onClick={() => open("valuation", asset.id)}>更新</button>}</footer></article>)}</div>
       <SectionTitle kicker="EXIT LEDGER" title="出售记录" />
       <div className="data-table-wrap"><table className="system-table"><thead><tr><th>机器</th><th>平台 / 状态</th><th>当时市场价</th><th>挂牌价</th><th>成交价</th><th>费用</th><th>最终利润</th></tr></thead><tbody>
         {data.sales.length ? data.sales.map((sale) => <tr key={sale.id}><td>{sale.cameraName}</td><td>{sale.platform} · {sale.status}</td><td>{cny(sale.marketPriceCny)}</td><td>{cny(sale.askingPriceCny)}</td><td>{sale.actualPriceCny ? cny(sale.actualPriceCny) : "—"}</td><td>{cny(sale.platformFeeCny + sale.shippingCny)}</td><td className={sale.finalProfit >= 0 ? "gain" : "loss"}>{signed(sale.finalProfit)}</td></tr>) : <tr><td colSpan={7} className="empty-cell">尚无出售记录。成交后系统会从资产估值转为已实现利润。</td></tr>}
@@ -547,8 +559,8 @@ function AssetDetail({ asset, data, open }: { asset: AssetView; data: DashboardD
   const expenses = data.expenses.filter((record) => record.cameraId === asset.id);
   return (
     <>
-      <div className="detail-actions"><Link href="/assets">← 返回资产管理</Link><div><button type="button" onClick={() => open("status", asset.id)}>更新状态</button><button type="button" onClick={() => open("expense", asset.id)}>＋ 其他费用</button><button type="button" onClick={() => open("repair", asset.id)}>＋ 维修记录</button><button type="button" onClick={() => open("valuation", asset.id)}>更新估价</button><button className="primary-action" type="button" onClick={() => open("sale", asset.id)}>记录出售</button></div></div>
-      <InvestmentCard asset={asset} open={open} />
+      <div className="detail-actions"><Link href="/assets">← 返回资产管理</Link>{!data.migrationReadOnly && <div><button type="button" onClick={() => open("status", asset.id)}>更新状态</button><button type="button" onClick={() => open("expense", asset.id)}>＋ 其他费用</button><button type="button" onClick={() => open("repair", asset.id)}>＋ 维修记录</button><button type="button" onClick={() => open("valuation", asset.id)}>更新估价</button><button className="primary-action" type="button" onClick={() => open("sale", asset.id)}>记录出售</button></div>}</div>
+      <InvestmentCard asset={asset} open={open} readOnly={data.migrationReadOnly} />
       <div className="detail-grid">
         <article className="record-panel"><p className="eyebrow">ASSET STATUS</p><h2>机器档案</h2><dl><div><dt>采购日期</dt><dd>{asset.acquiredAt}</dd></div><div><dt>采购平台</dt><dd>{asset.purchasePlatform || "—"}</dd></div><div><dt>订单 / 卖家</dt><dd>{asset.purchaseOrderRef || "—"} · {asset.purchaseSeller || "—"}</dd></div><div><dt>序列号</dt><dd>{asset.serialNumber || "未记录"}</dd></div><div><dt>机器重量</dt><dd>{asset.weightG ? `${asset.weightG} g` : "未记录"}</dd></div><div><dt>当前状态</dt><dd>{asset.lifecycleStatus}</dd></div><div><dt>维修状态</dt><dd>{asset.repairStatus}</dd></div><div><dt>成色等级</dt><dd>{asset.conditionGrade || "未记录"}</dd></div><div><dt>持有周期</dt><dd>{asset.holdingDays} 天</dd></div><div><dt>备注</dt><dd>{asset.notes || "—"}</dd></div></dl></article>
         <article className="record-panel"><p className="eyebrow">COST EVENTS</p><h2>费用、维修与销售</h2>{repairs.length || sales.length || expenses.length ? <ul className="record-list">{expenses.map((item) => <li key={item.id}><span>{item.expenseDate}</span><b>{item.category} · {item.notes || "其他费用"}</b><em>−{cny(item.amountCny)}</em></li>)}{repairs.map((item) => <li key={item.id}><span>{item.repairDate}</span><b>{item.workPerformed}</b><em>−{cny(item.costCny)}</em></li>)}{sales.map((item) => <li key={item.id}><span>{item.soldAt || item.listedAt || "—"}</span><b>{item.platform} · {item.status}</b><em className={item.finalProfit >= 0 ? "gain" : "loss"}>{signed(item.finalProfit)}</em></li>)}</ul> : <p className="panel-empty">暂无其他费用、维修或销售记录。</p>}</article>

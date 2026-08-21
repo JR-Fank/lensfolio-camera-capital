@@ -1,7 +1,10 @@
 import { getD1 } from "../../../db";
-import { jsonError, numberValue, readObject, text, valuationConfidence } from "../_shared";
+import { jsonError, numberValue, readObject, text, valuationConfidence, writeAccessError } from "../_shared";
 
 export async function POST(request: Request) {
+  const accessError = writeAccessError(request);
+  if (accessError) return accessError;
+
   try {
     const body = await readObject(request);
     const median = numberValue(body.medianCny, "市场中位价");

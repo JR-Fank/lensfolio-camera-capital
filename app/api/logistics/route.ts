@@ -1,7 +1,10 @@
 import { getD1 } from "../../../db";
-import { booleanValue, jsonError, numberValue, readObject, text } from "../_shared";
+import { booleanValue, jsonError, numberValue, readObject, text, writeAccessError } from "../_shared";
 
 export async function POST(request: Request) {
+  const accessError = writeAccessError(request);
+  if (accessError) return accessError;
+
   try {
     const body = await readObject(request);
     const cameraIds = Array.isArray(body.cameraIds)

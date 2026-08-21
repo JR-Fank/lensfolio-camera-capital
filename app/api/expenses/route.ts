@@ -1,7 +1,10 @@
 import { getD1 } from "../../../db";
-import { jsonError, numberValue, readObject, text } from "../_shared";
+import { jsonError, numberValue, readObject, text, writeAccessError } from "../_shared";
 
 export async function POST(request: Request) {
+  const accessError = writeAccessError(request);
+  if (accessError) return accessError;
+
   try {
     const body = await readObject(request);
     await getD1().prepare(`

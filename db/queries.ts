@@ -1,3 +1,5 @@
+import { env } from "cloudflare:workers";
+import { isMigrationReadOnly } from "../lib/migration-protection";
 import { getD1 } from ".";
 
 export type AssetView = {
@@ -159,6 +161,7 @@ export type ValuationHistoryView = {
 };
 
 export type DashboardData = {
+  migrationReadOnly: boolean;
   summary: {
     totalInvested: number;
     projectedCostBasis: number;
@@ -406,6 +409,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   const realizedProfit = Number(investmentRow?.realizedNetProceeds ?? 0) - soldCost;
 
   return {
+    migrationReadOnly: isMigrationReadOnly(env),
     summary: {
       totalInvested: Number(investmentRow?.totalInvested ?? 0),
       projectedCostBasis,
