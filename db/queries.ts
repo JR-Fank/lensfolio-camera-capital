@@ -37,14 +37,14 @@ export type AssetView = {
   valuationCondition: string | null;
   valuationConfidence: number;
   valuationCollectionMethod: string;
-  marketLowCny: number;
-  marketMedianCny: number;
-  marketHighCny: number;
-  expectedSaleCny: number;
-  conservativeProfit: number;
-  normalProfit: number;
-  optimisticProfit: number;
-  roi: number;
+  marketLowCny: number | null;
+  marketMedianCny: number | null;
+  marketHighCny: number | null;
+  expectedSaleCny: number | null;
+  conservativeProfit: number | null;
+  normalProfit: number | null;
+  optimisticProfit: number | null;
+  roi: number | null;
   holdingDays: number;
 };
 
@@ -168,9 +168,13 @@ export type DashboardData = {
     totalInvested: number;
     projectedCostBasis: number;
     assetCount: number;
-    currentMarketValue: number;
-    unrealizedProfit: number;
-    roi: number;
+    currentMarketValue: number | null;
+    unrealizedProfit: number | null;
+    roi: number | null;
+    valuedAssetCount: number;
+    valuedAssetCarryingCost: number | null;
+    valuationCoverageComplete: boolean;
+    portfolioRoi: number | null;
     averageHoldingDays: number;
     logisticsCost: number;
     estimatedLogisticsCost: number;
@@ -405,8 +409,20 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const activeAssets = assets.filter((asset) => asset.lifecycleStatus !== "已出售");
   const projectedCostBasis = activeAssets.reduce((sum, asset) => sum + asset.trueCost, 0);
-  const currentMarketValue = activeAssets.reduce((sum, asset) => sum + asset.marketMedianCny, 0);
-  const unrealizedProfit = currentMarketValue - projectedCostBasis;
+  const valuedAssets = activeAssets.filter((asset) => asset.marketMedianCny !== null);
+  const valuedAssetCarryingCost = valuedAssets.length
+    ? valuedAssets.reduce((sum, asset) => sum + asset.trueCost, 0)
+    : null;
+  const currentMarketValue = valuedAssets.length
+    ? valuedAssets.reduce((sum, asset) => sum + (asset.marketMedianCny ?? 0), 0)
+    : null;
+  const unrealizedProfit = currentMarketValue === null || valuedAssetCarryingCost === null
+    ? null
+    : currentMarketValue - valuedAssetCarryingCost;
+  const valuedAssetsRoi = unrealizedProfit === null || !valuedAssetCarryingCost
+    ? null
+    : unrealizedProfit / valuedAssetCarryingCost * 100;
+  const valuationCoverageComplete = valuedAssets.length === activeAssets.length;
   const soldCost = assets.filter((asset) => asset.lifecycleStatus === "已出售").reduce((sum, asset) => sum + asset.trueCost, 0);
   const realizedProfit = Number(investmentRow?.realizedNetProceeds ?? 0) - soldCost;
 
@@ -418,7 +434,11 @@ export async function getDashboardData(): Promise<DashboardData> {
       assetCount: activeAssets.length,
       currentMarketValue,
       unrealizedProfit,
-      roi: projectedCostBasis ? unrealizedProfit / projectedCostBasis * 100 : 0,
+      roi: valuedAssetsRoi,
+      valuedAssetCount: valuedAssets.length,
+      valuedAssetCarryingCost,
+      valuationCoverageComplete,
+      portfolioRoi: valuationCoverageComplete ? valuedAssetsRoi : null,
       averageHoldingDays: activeAssets.length ? activeAssets.reduce((sum, asset) => sum + asset.holdingDays, 0) / activeAssets.length : 0,
       logisticsCost: Number(investmentRow?.logisticsCost ?? 0),
       estimatedLogisticsCost: Number(investmentRow?.estimatedLogisticsCost ?? 0),

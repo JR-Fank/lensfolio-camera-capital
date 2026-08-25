@@ -166,6 +166,9 @@ button { color: inherit; }
 .market-range span { min-width: 0; min-height: 58px; display: flex; flex-direction: column; justify-content: center; gap: 7px; padding: 8px; background: white; }
 .market-range small { color: var(--muted); font-size: 7px; }
 .market-range b { font: 550 9px/1 var(--font-data); }
+.market-ledger.unvalued .market-range b,
+.market-ledger.unvalued .expected-price strong,
+.valuation-grid article.unvalued b { color: var(--muted); }
 .expected-price { min-height: 118px; display: flex; flex-direction: column; justify-content: center; margin-top: 10px; padding: 14px; color: var(--ink); background: var(--acid); }
 .expected-price small { font-size: 8px; }
 .expected-price strong { margin: 12px 0 8px; font: 650 clamp(22px, 2vw, 30px)/1 var(--font-data); letter-spacing: -.055em; }

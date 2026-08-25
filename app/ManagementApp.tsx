@@ -32,10 +32,12 @@ const BUSINESS_TIME_ZONE = "Asia/Hong_Kong";
 const cny = (value: number, digits = 0) => new Intl.NumberFormat("zh-CN", {
   style: "currency", currency: "CNY", maximumFractionDigits: digits,
 }).format(value);
+const nullableCny = (value: number | null, missing = "—") => value === null ? missing : cny(value);
 const jpy = (value: number) => `¥${new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 }).format(value)}`;
 const number = (value: number, digits = 1) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: digits }).format(value);
-const signed = (value: number) => `${value >= 0 ? "+" : "−"}${cny(Math.abs(value))}`;
-const pct = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+const signed = (value: number | null) => value === null ? "—" : `${value >= 0 ? "+" : "−"}${cny(Math.abs(value))}`;
+const pct = (value: number | null) => value === null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+const performanceClass = (value: number | null) => value === null ? "" : value >= 0 ? "gain" : "loss";
 const sampleCount = (value: number | null) => value === null ? "样本未记录" : `${value} 条`;
 const date = (value: string | null) => value
   ? new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: value.includes(":") ? "2-digit" : undefined, minute: value.includes(":") ? "2-digit" : undefined, timeZone: BUSINESS_TIME_ZONE }).format(new Date(value.replace(" ", "T") + (value.includes("T") ? "" : "+08:00")))
@@ -230,17 +232,21 @@ export default function ManagementApp({
 function DashboardView({ data, open }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>, id?: string) => void }) {
   const { summary } = data;
   const active = data.assets.filter((asset) => asset.lifecycleStatus !== "已出售");
-  const highestProfit = [...active].sort((a, b) => b.normalProfit - a.normalProfit)[0];
-  const highestRoi = [...active].sort((a, b) => b.roi - a.roi)[0];
-  const highestRisk = [...active].sort((a, b) => ((1 - b.valuationConfidence) * 100 - b.roi) - ((1 - a.valuationConfidence) * 100 - a.roi))[0];
+  const valuedActive = active.filter((asset) => asset.normalProfit !== null && asset.roi !== null);
+  const highestProfit = [...valuedActive].sort((a, b) => (b.normalProfit ?? 0) - (a.normalProfit ?? 0))[0];
+  const highestRoi = [...valuedActive].sort((a, b) => (b.roi ?? 0) - (a.roi ?? 0))[0];
+  const riskScore = (asset: AssetView) => asset.marketMedianCny === null
+    ? Number.POSITIVE_INFINITY
+    : (1 - asset.valuationConfidence) * 100 - (asset.roi ?? 0);
+  const highestRisk = [...active].sort((a, b) => riskScore(b) - riskScore(a))[0];
   const largest = [...active].sort((a, b) => b.trueCost - a.trueCost)[0];
-  const marketCoverage = data.assets.filter((asset) => asset.valuationDate).length;
+  const partialCoverage = !summary.valuationCoverageComplete;
   return (
     <>
       <section className="metric-ledger" aria-label="投资核心指标">
         <Metric label="实际已投入" value={cny(summary.totalInvested)} note={`已付物流 ${cny(summary.logisticsCost - summary.estimatedLogisticsCost)} · 不含待付`} tone="ink" />
-        <Metric label="当前市场估值" value={cny(summary.currentMarketValue)} note={`${marketCoverage}/${data.assets.length} 台已估价`} tone="acid" />
-        <Metric label="浮盈金额" value={signed(summary.unrealizedProfit)} note={`投资 ROI ${pct(summary.roi)}`} tone={summary.unrealizedProfit >= 0 ? "positive" : "negative"} />
+        <Metric label={partialCoverage ? "已估值资产估值" : "当前市场估值"} value={nullableCny(summary.currentMarketValue, "未估值")} note={`估值覆盖 ${summary.valuedAssetCount} / ${summary.assetCount}`} tone="acid" />
+        <Metric label={partialCoverage ? "已估值资产浮盈" : "浮盈金额"} value={signed(summary.unrealizedProfit)} note={`${partialCoverage ? "已估值资产" : "投资"} ROI ${pct(summary.roi)} · 成本 ${nullableCny(summary.valuedAssetCarryingCost)}`} tone={summary.unrealizedProfit === null ? undefined : summary.unrealizedProfit >= 0 ? "positive" : "negative"} />
         <Metric label="当前资产数量" value={`${summary.assetCount} 台`} note={`预计完全落地成本 ${cny(summary.projectedCostBasis)}`} />
         <Metric label="平均持有周期" value={`${number(summary.averageHoldingDays, 0)} 天`} note="从采购日期计算" compact />
         <Metric label="物流总成本" value={cny(summary.logisticsCost)} note={`其中预算 ${cny(summary.estimatedLogisticsCost)}`} compact />
@@ -249,8 +255,8 @@ function DashboardView({ data, open }: { data: DashboardData; open: (kind: Exclu
       </section>
 
       <section className="investor-ranking" aria-label="组合排行">
-        <article><small>最高利润</small><strong>{highestProfit?.model ?? "—"}</strong><b className={(highestProfit?.normalProfit ?? 0) >= 0 ? "gain" : "loss"}>{highestProfit ? signed(highestProfit.normalProfit) : "—"}</b></article>
-        <article><small>最高 ROI</small><strong>{highestRoi?.model ?? "—"}</strong><b className={(highestRoi?.roi ?? 0) >= 0 ? "gain" : "loss"}>{highestRoi ? pct(highestRoi.roi) : "—"}</b></article>
+        <article><small>最高利润</small><strong>{highestProfit?.model ?? "—"}</strong><b className={performanceClass(highestProfit?.normalProfit ?? null)}>{highestProfit ? signed(highestProfit.normalProfit) : "—"}</b></article>
+        <article><small>最高 ROI</small><strong>{highestRoi?.model ?? "—"}</strong><b className={performanceClass(highestRoi?.roi ?? null)}>{highestRoi ? pct(highestRoi.roi) : "—"}</b></article>
         <article><small>最高风险</small><strong>{highestRisk?.model ?? "—"}</strong><b>{highestRisk ? `${Math.round(highestRisk.valuationConfidence * 5)} / 5 可信` : "—"}</b></article>
         <article><small>最大资金占用</small><strong>{largest?.model ?? "—"}</strong><b>{largest ? cny(largest.trueCost) : "—"}</b></article>
       </section>
@@ -277,8 +283,9 @@ function DashboardView({ data, open }: { data: DashboardData; open: (kind: Exclu
 
 function PortfolioCharts({ data }: { data: DashboardData }) {
   const active = data.assets.filter((asset) => asset.lifecycleStatus !== "已出售");
+  const valuedActive = active.filter((asset) => asset.roi !== null);
   const capitalTotal = active.reduce((sum, asset) => sum + asset.trueCost, 0) || 1;
-  const roiScale = Math.max(1, ...active.map((asset) => Math.abs(asset.roi)));
+  const roiScale = Math.max(1, ...valuedActive.map((asset) => Math.abs(asset.roi ?? 0)));
   const logisticsMax = Math.max(1, ...data.logistics.map((order) => order.shippingCny));
   const repairMax = Math.max(1, ...data.repairs.map((repair) => repair.costCny));
   const valuationByDate = new Map<string, number>();
@@ -299,10 +306,11 @@ function PortfolioCharts({ data }: { data: DashboardData }) {
       </article>
 
       <article className="chart-card roi-chart">
-        <ChartHead label="RETURN RANK" title="ROI 排行" note="红色盈利 / 绿色亏损" />
-        <div className="rank-bars">{[...active].sort((a, b) => b.roi - a.roi).map((asset) => {
-          const width = Math.max(2, Math.abs(asset.roi) / roiScale * 48);
-          return <div key={asset.id}><b>{asset.model}</b><span className="signed-track"><i className={asset.roi >= 0 ? "profit-bar" : "loss-bar"} style={asset.roi >= 0 ? { left: "50%", width: `${width}%` } : { left: `${50 - width}%`, width: `${width}%` }} /></span><em className={asset.roi >= 0 ? "gain" : "loss"}>{pct(asset.roi)}</em></div>;
+        <ChartHead label="RETURN RANK" title="ROI 排行" note={`仅含已估值资产 ${valuedActive.length} / ${active.length}`} />
+        <div className="rank-bars">{[...valuedActive].sort((a, b) => (b.roi ?? 0) - (a.roi ?? 0)).map((asset) => {
+          const roi = asset.roi ?? 0;
+          const width = Math.max(2, Math.abs(roi) / roiScale * 48);
+          return <div key={asset.id}><b>{asset.model}</b><span className="signed-track"><i className={roi >= 0 ? "profit-bar" : "loss-bar"} style={roi >= 0 ? { left: "50%", width: `${width}%` } : { left: `${50 - width}%`, width: `${width}%` }} /></span><em className={performanceClass(asset.roi)}>{pct(asset.roi)}</em></div>;
         })}</div>
       </article>
 
@@ -345,6 +353,7 @@ function AssetsView({ data, canCreateAsset }: { data: DashboardData; canCreateAs
 
 function InvestmentCard({ asset, open, readOnly }: { asset: AssetView; open: (kind: Exclude<ModalKind, null>, id?: string) => void; readOnly: boolean }) {
   const normalRoi = asset.roi;
+  const hasValuation = asset.marketMedianCny !== null;
   const pendingShipping = asset.pendingShippingCny ?? 0;
   const confidence = Math.max(0, Math.min(5, Math.round(asset.valuationConfidence * 5)));
   return (
@@ -365,17 +374,17 @@ function InvestmentCard({ asset, open, readOnly }: { asset: AssetView; open: (ki
           {pendingShipping > 0 && <LedgerRow label="预计完全落地" value={cny(asset.trueCost + pendingShipping)} total />}
           <details className="procurement-detail"><summary>展开日元采购明细</summary><div><LedgerRow label="日本购买价格" value={jpy(asset.purchaseJpy)} /><LedgerRow label="日元汇率" value={asset.exchangeRate.toFixed(4)} /><LedgerRow label="订单日本境内运费" value={jpy(asset.domesticShippingJpy)} /></div></details>
         </div>
-        <div className="market-ledger">
+        <div className={`market-ledger${hasValuation ? "" : " unvalued"}`}>
           <p className="micro-title">市场估值 / MARK TO MARKET</p>
-          <div className="market-range"><span><small>区间下限</small><b>{cny(asset.marketLowCny)}</b></span><span><small>市场中位</small><b>{cny(asset.marketMedianCny)}</b></span><span><small>区间上限</small><b>{cny(asset.marketHighCny)}</b></span></div>
-          <div className="expected-price"><small>预计售价</small><strong>{cny(asset.expectedSaleCny)}</strong><em>{asset.valuationDate ? `${asset.valuationSource} · ${sampleCount(asset.valuationSampleSize)} · ${"★".repeat(confidence)}${"☆".repeat(5 - confidence)}` : "待录入估价"}</em></div>
+          <div className="market-range"><span><small>区间下限</small><b>{nullableCny(asset.marketLowCny)}</b></span><span><small>市场中位</small><b>{nullableCny(asset.marketMedianCny, "未估值")}</b></span><span><small>区间上限</small><b>{nullableCny(asset.marketHighCny)}</b></span></div>
+          <div className="expected-price"><small>当前估值</small><strong>{nullableCny(asset.expectedSaleCny, "未估值")}</strong><em>{asset.valuationDate ? `${asset.valuationSource} · ${sampleCount(asset.valuationSampleSize)} · ${"★".repeat(confidence)}${"☆".repeat(5 - confidence)}` : "待录入估价"}</em></div>
         </div>
       </div>
       <div className="scenario-ledger">
-        <span><small>保守利润</small><b className={asset.conservativeProfit >= 0 ? "gain" : "loss"}>{signed(asset.conservativeProfit)}</b></span>
-        <span><small>正常利润</small><b className={asset.normalProfit >= 0 ? "gain" : "loss"}>{signed(asset.normalProfit)}</b></span>
-        <span><small>乐观利润</small><b className={asset.optimisticProfit >= 0 ? "gain" : "loss"}>{signed(asset.optimisticProfit)}</b></span>
-        <span className="roi-cell"><small>中位价 ROI</small><b className={normalRoi >= 0 ? "gain" : "loss"}>{pct(normalRoi)}</b></span>
+        <span><small>保守利润</small><b className={performanceClass(asset.conservativeProfit)}>{signed(asset.conservativeProfit)}</b></span>
+        <span><small>正常利润</small><b className={performanceClass(asset.normalProfit)}>{signed(asset.normalProfit)}</b></span>
+        <span><small>乐观利润</small><b className={performanceClass(asset.optimisticProfit)}>{signed(asset.optimisticProfit)}</b></span>
+        <span className="roi-cell"><small>中位价 ROI</small><b className={performanceClass(normalRoi)}>{pct(normalRoi)}</b></span>
       </div>
       <footer>
         <span>{asset.holdingDays} 天持有 · {asset.lifecycleStatus}</span>
@@ -465,9 +474,9 @@ function RepairsView({ data, open }: { data: DashboardData; open: (kind: Exclude
 function SalesView({ data, open }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>, id?: string) => void }) {
   return (
     <>
-      <div className="toolbar-row"><div className="position-summary"><span>组合预计售价 <b>{cny(data.summary.currentMarketValue)}</b></span><span>已实现利润 <b>{signed(data.summary.realizedProfit)}</b></span></div>{!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("sale")}>＋ 记录出售</button>}</div>
+      <div className="toolbar-row"><div className="position-summary"><span>已估值资产估值 <b>{nullableCny(data.summary.currentMarketValue, "未估值")}</b></span><span>已实现利润 <b>{signed(data.summary.realizedProfit)}</b></span></div>{!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("sale")}>＋ 记录出售</button>}</div>
       <SectionTitle kicker="MARKET MARKS" title="闲鱼估价" action={!data.migrationReadOnly ? <button className="text-action" type="button" onClick={() => open("valuation")}>＋ 更新估价</button> : undefined} />
-      <div className="valuation-grid">{data.assets.map((asset) => <article key={asset.id}><header><span>{asset.brand}</span><h3>{asset.model}</h3></header><div><small>区间下限</small><b>{cny(asset.marketLowCny)}</b></div><div><small>市场中位</small><b>{cny(asset.marketMedianCny)}</b></div><div><small>区间上限</small><b>{cny(asset.marketHighCny)}</b></div><footer><span>{sampleCount(asset.valuationSampleSize)} · 可信 {Math.round(asset.valuationConfidence * 100)}%</span>{!data.migrationReadOnly && <button type="button" onClick={() => open("valuation", asset.id)}>更新</button>}</footer></article>)}</div>
+      <div className="valuation-grid">{data.assets.map((asset) => <article className={asset.marketMedianCny === null ? "unvalued" : ""} key={asset.id}><header><span>{asset.brand}</span><h3>{asset.model}</h3></header><div><small>区间下限</small><b>{nullableCny(asset.marketLowCny)}</b></div><div><small>市场中位</small><b>{nullableCny(asset.marketMedianCny, "未估值")}</b></div><div><small>区间上限</small><b>{nullableCny(asset.marketHighCny)}</b></div><footer><span>{asset.valuationDate ? `${sampleCount(asset.valuationSampleSize)} · 可信 ${Math.round(asset.valuationConfidence * 100)}%` : "待录入估价"}</span>{!data.migrationReadOnly && <button type="button" onClick={() => open("valuation", asset.id)}>更新</button>}</footer></article>)}</div>
       <SectionTitle kicker="EXIT LEDGER" title="出售记录" />
       <div className="data-table-wrap"><table className="system-table"><thead><tr><th>机器</th><th>平台 / 状态</th><th>当时市场价</th><th>挂牌价</th><th>成交价</th><th>费用</th><th>最终利润</th></tr></thead><tbody>
         {data.sales.length ? data.sales.map((sale) => <tr key={sale.id}><td>{sale.cameraName}</td><td>{sale.platform} · {sale.status}</td><td>{cny(sale.marketPriceCny)}</td><td>{cny(sale.askingPriceCny)}</td><td>{sale.actualPriceCny ? cny(sale.actualPriceCny) : "—"}</td><td>{cny(sale.platformFeeCny + sale.shippingCny)}</td><td className={sale.finalProfit >= 0 ? "gain" : "loss"}>{signed(sale.finalProfit)}</td></tr>) : <tr><td colSpan={7} className="empty-cell">尚无出售记录。成交后系统会从资产估值转为已实现利润。</td></tr>}
@@ -501,7 +510,7 @@ function BuyDecisionView({ data }: { data: DashboardData }) {
     const next = data.assets.find((asset) => asset.id === id);
     setAssetId(id);
     if (!next) return;
-    setMarketPrice(next.marketMedianCny);
+    setMarketPrice(next.marketMedianCny ?? 0);
     setCurrentJpy(next.purchaseJpy);
     setExchangeRate(next.exchangeRate || 0.045);
     setLogisticsReserve(next.internationalShippingCny);
@@ -555,12 +564,12 @@ function AnalysisView({ data }: { data: DashboardData }) {
         <div className="lab-form">
           <label>选择机器<select value={assetId} onChange={(event) => { const next = data.assets.find((item) => item.id === event.target.value); setAssetId(event.target.value); setSalePrice(next?.expectedSaleCny ?? 0); }}>{data.assets.map((item) => <option value={item.id} key={item.id}>{fullName(item)}</option>)}</select></label>
           <div className="lab-input-grid"><NumberControl label="模拟成交价" value={salePrice} setValue={setSalePrice} prefix="¥" /><NumberControl label="新增维修" value={extraRepair} setValue={setExtraRepair} prefix="¥" /><NumberControl label="平台费率" value={platformFee} setValue={setPlatformFee} suffix="%" /><NumberControl label="出售运费" value={outboundShipping} setValue={setOutboundShipping} prefix="¥" /></div>
-          <div className="market-presets"><span>市场参考</span><button type="button" onClick={() => setSalePrice(asset.marketLowCny)}>下限 {cny(asset.marketLowCny)}</button><button type="button" onClick={() => setSalePrice(asset.marketMedianCny)}>中位 {cny(asset.marketMedianCny)}</button><button type="button" onClick={() => setSalePrice(asset.marketHighCny)}>上限 {cny(asset.marketHighCny)}</button></div>
+          <div className="market-presets"><span>市场参考</span>{asset.marketLowCny !== null && <button type="button" onClick={() => setSalePrice(asset.marketLowCny ?? 0)}>下限 {cny(asset.marketLowCny)}</button>}{asset.marketMedianCny !== null && <button type="button" onClick={() => setSalePrice(asset.marketMedianCny ?? 0)}>中位 {cny(asset.marketMedianCny)}</button>}{asset.marketHighCny !== null && <button type="button" onClick={() => setSalePrice(asset.marketHighCny ?? 0)}>上限 {cny(asset.marketHighCny)}</button>}{asset.marketMedianCny === null && <small>未估值</small>}</div>
           <div className="lab-results"><span><small>调整后成本</small><b>{cny(adjustedCost)}</b></span><span><small>保本售价</small><b>{cny(breakEven)}</b></span><span><small>预计净利润</small><b className={profit >= 0 ? "gain" : "loss"}>{signed(profit)}</b></span><span className={profit >= 0 ? "result-positive" : "result-negative"}><small>投资 ROI</small><b>{pct(roi)}</b></span></div>
         </div>
       </section>
       <SectionTitle kicker="SCENARIO MATRIX" title="组合退出情景" />
-      <div className="scenario-matrix"><div className="matrix-head"><span>资产</span><span>真实成本</span><span>保守利润</span><span>正常利润</span><span>乐观利润</span><span>预期 ROI</span></div>{data.assets.map((item) => <div className="matrix-row" key={item.id}><span><b>{item.model}</b><small>{item.repairStatus}</small></span><span>{cny(item.trueCost)}</span><span className={item.conservativeProfit >= 0 ? "gain" : "loss"}>{signed(item.conservativeProfit)}</span><span className={item.normalProfit >= 0 ? "gain" : "loss"}>{signed(item.normalProfit)}</span><span className={item.optimisticProfit >= 0 ? "gain" : "loss"}>{signed(item.optimisticProfit)}</span><span><b>{pct(item.roi)}</b></span></div>)}</div>
+      <div className="scenario-matrix"><div className="matrix-head"><span>资产</span><span>真实成本</span><span>保守利润</span><span>正常利润</span><span>乐观利润</span><span>预期 ROI</span></div>{data.assets.map((item) => <div className="matrix-row" key={item.id}><span><b>{item.model}</b><small>{item.repairStatus}</small></span><span>{cny(item.trueCost)}</span><span className={performanceClass(item.conservativeProfit)}>{signed(item.conservativeProfit)}</span><span className={performanceClass(item.normalProfit)}>{signed(item.normalProfit)}</span><span className={performanceClass(item.optimisticProfit)}>{signed(item.optimisticProfit)}</span><span><b>{pct(item.roi)}</b></span></div>)}</div>
     </>
   );
 }
@@ -635,15 +644,15 @@ function ValuationForm({ assets, cameraId, onSubmit, busy }: { assets: AssetView
   const selected = assets.find((asset) => asset.id === cameraId) ?? assets[0];
   return <form onSubmit={onSubmit}><ModalHeader kicker="MARK TO MARKET" title="更新市场估值" copy="当前阶段人工录入可比样本；每次保存都保留历史，不伪装成自动采集。" /><div className="form-grid">
     <Field label="机器" wide><AssetSelect assets={assets} defaultValue={cameraId} /></Field><Field label="估价来源"><select name="source"><option>闲鱼</option><option>Mercari</option><option>eBay</option><option>人工调研</option></select></Field><Field label="估价日期"><input name="valuedAt" type="date" defaultValue={today()} required /></Field><Field label="搜索关键词" wide><input name="keyword" defaultValue={selected ? `${selected.brand} ${selected.model}${selected.variant ? ` ${selected.variant}` : ""}` : ""} /></Field>
-    <Field label="价格区间下限"><input name="lowCny" type="number" min="0" defaultValue={selected?.marketLowCny} required /></Field><Field label="市场中位价"><input name="medianCny" type="number" min="0" defaultValue={selected?.marketMedianCny} required /></Field><Field label="价格区间上限"><input name="highCny" type="number" min="0" defaultValue={selected?.marketHighCny} required /></Field><Field label="预计售价"><input name="expectedCny" type="number" min="0" defaultValue={selected?.expectedSaleCny} required /></Field><Field label="样本数"><input name="sampleSize" type="number" min="0" defaultValue={selected?.valuationSampleSize || ""} /></Field><Field label="样本成色"><input name="conditionGrade" defaultValue={selected?.conditionGrade || ""} /></Field><Field label="备注" wide><textarea name="notes" rows={3} /></Field><p className="cleaning-rule">保存时记录统一清洗口径：排除维修机、故障机、配件、皮套、说明书与空壳；只保留完整且可正常使用的机器样本。可信度由样本量和价格离散程度自动计算。</p>
+    <Field label="价格区间下限"><input name="lowCny" type="number" min="0" defaultValue={selected?.marketLowCny ?? undefined} required /></Field><Field label="市场中位价"><input name="medianCny" type="number" min="0" defaultValue={selected?.marketMedianCny ?? undefined} required /></Field><Field label="价格区间上限"><input name="highCny" type="number" min="0" defaultValue={selected?.marketHighCny ?? undefined} required /></Field><Field label="预计售价"><input name="expectedCny" type="number" min="0" defaultValue={selected?.expectedSaleCny ?? undefined} required /></Field><Field label="样本数"><input name="sampleSize" type="number" min="0" defaultValue={selected?.valuationSampleSize || ""} /></Field><Field label="样本成色"><input name="conditionGrade" defaultValue={selected?.conditionGrade || ""} /></Field><Field label="备注" wide><textarea name="notes" rows={3} /></Field><p className="cleaning-rule">保存时记录统一清洗口径：排除维修机、故障机、配件、皮套、说明书与空壳；只保留完整且可正常使用的机器样本。可信度由样本量和价格离散程度自动计算。</p>
   </div><Submit busy={busy} label="保存市场估价" /></form>;
 }
 function SaleForm({ assets, cameraId, onSubmit, busy }: { assets: AssetView[]; cameraId: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
   const selected = assets.find((asset) => asset.id === cameraId) ?? assets[0];
   return <form onSubmit={onSubmit}><ModalHeader kicker="EXIT EVENT" title="记录出售" copy="已出售记录会结转最终利润；待出售记录用于管理挂牌。" /><div className="form-grid">
     <Field label="机器" wide><AssetSelect assets={assets} defaultValue={cameraId} /></Field><Field label="平台"><input name="platform" defaultValue="闲鱼" /></Field><Field label="状态"><select name="status"><option>待出售</option><option>已出售</option></select></Field>
-    <Field label="上架日期"><input name="listedAt" type="date" defaultValue={today()} /></Field><Field label="成交日期"><input name="soldAt" type="date" defaultValue={today()} /></Field><Field label="挂牌价"><input name="askingPriceCny" type="number" min="0" defaultValue={selected?.expectedSaleCny} /></Field>
-    <Field label="当时市场中位价"><input name="marketPriceCny" type="number" min="0" defaultValue={selected?.marketMedianCny} /></Field><Field label="实际成交价"><input name="actualPriceCny" type="number" min="0" defaultValue="0" /></Field><Field label="平台费用"><input name="platformFeeCny" type="number" min="0" defaultValue="0" /></Field><Field label="出售运费"><input name="shippingCny" type="number" min="0" defaultValue="0" /></Field><Field label="买家 / 备注" wide><textarea name="buyerNotes" rows={3} /></Field>
+    <Field label="上架日期"><input name="listedAt" type="date" defaultValue={today()} /></Field><Field label="成交日期"><input name="soldAt" type="date" defaultValue={today()} /></Field><Field label="挂牌价"><input name="askingPriceCny" type="number" min="0" defaultValue={selected?.expectedSaleCny ?? undefined} /></Field>
+    <Field label="当时市场中位价"><input name="marketPriceCny" type="number" min="0" defaultValue={selected?.marketMedianCny ?? undefined} /></Field><Field label="实际成交价"><input name="actualPriceCny" type="number" min="0" defaultValue="0" /></Field><Field label="平台费用"><input name="platformFeeCny" type="number" min="0" defaultValue="0" /></Field><Field label="出售运费"><input name="shippingCny" type="number" min="0" defaultValue="0" /></Field><Field label="买家 / 备注" wide><textarea name="buyerNotes" rows={3} /></Field>
   </div><Submit busy={busy} label="保存出售记录" /></form>;
 }
 function LogisticsForm({ assets, onSubmit, busy }: { assets: AssetView[]; onSubmit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
