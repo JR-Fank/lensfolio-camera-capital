@@ -1,18 +1,24 @@
 import type { Metadata } from "next";
-import { createNativeDashboardBaseline } from "../../../lib/native-dashboard-baseline";
+import { notFound } from "next/navigation";
+import { getSupabaseAssetDetailData } from "../../../lib/supabase/dashboard";
 import ManagementApp from "../../ManagementApp";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
-  await params;
+  const { id } = await params;
+  const data = await getSupabaseAssetDetailData(id);
+  const asset = data?.assets[0];
+  if (!asset) return { title: "相机记录未找到 · Lensfolio" };
   return {
-    title: "相机投资档案 · Lensfolio",
-    description: "单机真实成本、市场估值、维修记录与退出回报。",
+    title: `${asset.brand} ${asset.model} · 相机投资档案`,
+    description: `${asset.brand} ${asset.model} 的真实成本、市场估值与投资回报。`,
   };
 }
 
 export default async function CameraPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <ManagementApp initialData={createNativeDashboardBaseline()} section="assets" selectedAssetId={id} />;
+  const data = await getSupabaseAssetDetailData(id);
+  if (!data) notFound();
+  return <ManagementApp initialData={data} section="assets" selectedAssetId={id} />;
 }

@@ -35,6 +35,7 @@ const jpy = (value: number) => `¥${new Intl.NumberFormat("ja-JP", { maximumFrac
 const number = (value: number, digits = 1) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: digits }).format(value);
 const signed = (value: number) => `${value >= 0 ? "+" : "−"}${cny(Math.abs(value))}`;
 const pct = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+const sampleCount = (value: number | null) => value === null ? "样本未记录" : `${value} 条`;
 const date = (value: string | null) => value
   ? new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: value.includes(":") ? "2-digit" : undefined, minute: value.includes(":") ? "2-digit" : undefined }).format(new Date(value.replace(" ", "T") + (value.includes("T") ? "" : "+08:00")))
   : "—";
@@ -170,7 +171,7 @@ export default function ManagementApp({
         </nav>
         <div className="rail-status">
           <i /><span>{migrationReadOnly ? "MIGRATION PROTECTION" : "DATABASE ONLINE"}</span>
-          <small>{migrationReadOnly ? "READ ONLY · D1 FROZEN" : "D1 · 持久化存储"}</small>
+          <small>{data.dataSource === "supabase" ? "SUPABASE · RLS READ ONLY" : migrationReadOnly ? "READ ONLY · D1 FROZEN" : "D1 · 持久化存储"}</small>
         </div>
       </aside>
 
@@ -229,10 +230,10 @@ function DashboardView({ data, open }: { data: DashboardData; open: (kind: Exclu
   return (
     <>
       <section className="metric-ledger" aria-label="投资核心指标">
-        <Metric label="总投入资金" value={cny(summary.totalInvested)} note={`含已付物流 ${cny(summary.logisticsCost - summary.estimatedLogisticsCost)}`} tone="ink" />
+        <Metric label="实际已投入" value={cny(summary.totalInvested)} note={`已付物流 ${cny(summary.logisticsCost - summary.estimatedLogisticsCost)} · 不含待付`} tone="ink" />
         <Metric label="当前市场估值" value={cny(summary.currentMarketValue)} note={`${marketCoverage}/${data.assets.length} 台已估价`} tone="acid" />
         <Metric label="浮盈金额" value={signed(summary.unrealizedProfit)} note={`投资 ROI ${pct(summary.roi)}`} tone={summary.unrealizedProfit >= 0 ? "positive" : "negative"} />
-        <Metric label="当前资产数量" value={`${summary.assetCount} 台`} note={`预计成本基数 ${cny(summary.projectedCostBasis)}`} />
+        <Metric label="当前资产数量" value={`${summary.assetCount} 台`} note={`预计完全落地成本 ${cny(summary.projectedCostBasis)}`} />
         <Metric label="平均持有周期" value={`${number(summary.averageHoldingDays, 0)} 天`} note="从采购日期计算" compact />
         <Metric label="物流总成本" value={cny(summary.logisticsCost)} note={`其中预算 ${cny(summary.estimatedLogisticsCost)}`} compact />
         <Metric label="维修总成本" value={cny(summary.repairCost)} note={`${data.repairs.length} 条维修记录`} compact />
@@ -335,7 +336,8 @@ function AssetsView({ data, open }: { data: DashboardData; open: (kind: Exclude<
 }
 
 function InvestmentCard({ asset, open, readOnly }: { asset: AssetView; open: (kind: Exclude<ModalKind, null>, id?: string) => void; readOnly: boolean }) {
-  const normalRoi = asset.trueCost ? asset.normalProfit / asset.trueCost * 100 : 0;
+  const normalRoi = asset.roi;
+  const pendingShipping = asset.pendingShippingCny ?? 0;
   const confidence = Math.max(0, Math.min(5, Math.round(asset.valuationConfidence * 5)));
   return (
     <article className="investment-card">
@@ -346,17 +348,19 @@ function InvestmentCard({ asset, open, readOnly }: { asset: AssetView; open: (ki
       <div className="card-split">
         <div className="cost-ledger">
           <p className="micro-title">真实成本 / COST BASIS</p>
-          <div className="true-cost"><span>当前真实成本</span><strong>{cny(asset.trueCost)}</strong></div>
+          <div className="true-cost"><span>实际已投入成本</span><strong>{cny(asset.trueCost)}</strong></div>
           <LedgerRow label="采购人民币实付" value={cny(asset.purchaseCny)} />
-          <LedgerRow label="国际物流分摊" value={`${cny(asset.internationalShippingCny)}${asset.shippingEstimated ? " 预算" : ""}`} />
+          <LedgerRow label="已付国际物流" value={cny(asset.internationalShippingCny)} />
+          {pendingShipping > 0 && <LedgerRow label="待付国际物流" value={`${cny(pendingShipping)} 预算`} />}
           <LedgerRow label="维修费用" value={cny(asset.repairCny)} />
           <LedgerRow label="其他费用" value={cny(asset.otherCostCny)} />
-          <details className="procurement-detail"><summary>展开日元采购明细</summary><div><LedgerRow label="日本购买价格" value={jpy(asset.purchaseJpy)} /><LedgerRow label="日元汇率" value={asset.exchangeRate.toFixed(4)} /><LedgerRow label="日本国内运费" value={`${jpy(asset.domesticShippingJpy)} / ${cny(asset.domesticShippingCny)}`} /></div></details>
+          {pendingShipping > 0 && <LedgerRow label="预计完全落地" value={cny(asset.trueCost + pendingShipping)} total />}
+          <details className="procurement-detail"><summary>展开日元采购明细</summary><div><LedgerRow label="日本购买价格" value={jpy(asset.purchaseJpy)} /><LedgerRow label="日元汇率" value={asset.exchangeRate.toFixed(4)} /><LedgerRow label="订单日本境内运费" value={jpy(asset.domesticShippingJpy)} /></div></details>
         </div>
         <div className="market-ledger">
           <p className="micro-title">市场估值 / MARK TO MARKET</p>
           <div className="market-range"><span><small>区间下限</small><b>{cny(asset.marketLowCny)}</b></span><span><small>市场中位</small><b>{cny(asset.marketMedianCny)}</b></span><span><small>区间上限</small><b>{cny(asset.marketHighCny)}</b></span></div>
-          <div className="expected-price"><small>预计售价</small><strong>{cny(asset.expectedSaleCny)}</strong><em>{asset.valuationDate ? `${asset.valuationSource} · ${asset.valuationSampleSize || 0} 条 · ${"★".repeat(confidence)}${"☆".repeat(5 - confidence)}` : "待录入估价"}</em></div>
+          <div className="expected-price"><small>预计售价</small><strong>{cny(asset.expectedSaleCny)}</strong><em>{asset.valuationDate ? `${asset.valuationSource} · ${sampleCount(asset.valuationSampleSize)} · ${"★".repeat(confidence)}${"☆".repeat(5 - confidence)}` : "待录入估价"}</em></div>
         </div>
       </div>
       <div className="scenario-ledger">
@@ -455,7 +459,7 @@ function SalesView({ data, open }: { data: DashboardData; open: (kind: Exclude<M
     <>
       <div className="toolbar-row"><div className="position-summary"><span>组合预计售价 <b>{cny(data.summary.currentMarketValue)}</b></span><span>已实现利润 <b>{signed(data.summary.realizedProfit)}</b></span></div>{!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("sale")}>＋ 记录出售</button>}</div>
       <SectionTitle kicker="MARKET MARKS" title="闲鱼估价" action={!data.migrationReadOnly ? <button className="text-action" type="button" onClick={() => open("valuation")}>＋ 更新估价</button> : undefined} />
-      <div className="valuation-grid">{data.assets.map((asset) => <article key={asset.id}><header><span>{asset.brand}</span><h3>{asset.model}</h3></header><div><small>区间下限</small><b>{cny(asset.marketLowCny)}</b></div><div><small>市场中位</small><b>{cny(asset.marketMedianCny)}</b></div><div><small>区间上限</small><b>{cny(asset.marketHighCny)}</b></div><footer><span>{asset.valuationSampleSize || 0} 条 · 可信 {Math.round(asset.valuationConfidence * 100)}%</span>{!data.migrationReadOnly && <button type="button" onClick={() => open("valuation", asset.id)}>更新</button>}</footer></article>)}</div>
+      <div className="valuation-grid">{data.assets.map((asset) => <article key={asset.id}><header><span>{asset.brand}</span><h3>{asset.model}</h3></header><div><small>区间下限</small><b>{cny(asset.marketLowCny)}</b></div><div><small>市场中位</small><b>{cny(asset.marketMedianCny)}</b></div><div><small>区间上限</small><b>{cny(asset.marketHighCny)}</b></div><footer><span>{sampleCount(asset.valuationSampleSize)} · 可信 {Math.round(asset.valuationConfidence * 100)}%</span>{!data.migrationReadOnly && <button type="button" onClick={() => open("valuation", asset.id)}>更新</button>}</footer></article>)}</div>
       <SectionTitle kicker="EXIT LEDGER" title="出售记录" />
       <div className="data-table-wrap"><table className="system-table"><thead><tr><th>机器</th><th>平台 / 状态</th><th>当时市场价</th><th>挂牌价</th><th>成交价</th><th>费用</th><th>最终利润</th></tr></thead><tbody>
         {data.sales.length ? data.sales.map((sale) => <tr key={sale.id}><td>{sale.cameraName}</td><td>{sale.platform} · {sale.status}</td><td>{cny(sale.marketPriceCny)}</td><td>{cny(sale.askingPriceCny)}</td><td>{sale.actualPriceCny ? cny(sale.actualPriceCny) : "—"}</td><td>{cny(sale.platformFeeCny + sale.shippingCny)}</td><td className={sale.finalProfit >= 0 ? "gain" : "loss"}>{signed(sale.finalProfit)}</td></tr>) : <tr><td colSpan={7} className="empty-cell">尚无出售记录。成交后系统会从资产估值转为已实现利润。</td></tr>}
@@ -508,7 +512,7 @@ function BuyDecisionView({ data }: { data: DashboardData }) {
           <NumberControl label="预计物流" value={logisticsReserve} setValue={setLogisticsReserve} prefix="¥" />
           <NumberControl label="维修风险预留" value={repairReserve} setValue={setRepairReserve} prefix="¥" />
         </div>
-        <p className="model-source">估值：{selected.valuationSource} · {selected.valuationSampleSize || 0} 条样本 · 可信度 {Math.round(selected.valuationConfidence * 100)}%</p>
+        <p className="model-source">估值：{selected.valuationSource} · {sampleCount(selected.valuationSampleSize)} · 可信度 {Math.round(selected.valuationConfidence * 100)}%</p>
       </div>
       <div className="decision-output">
         <p className="eyebrow">MAXIMUM ENTRY</p>

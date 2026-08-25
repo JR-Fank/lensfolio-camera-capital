@@ -25,6 +25,7 @@ export type AssetView = {
   domesticShippingJpy: number;
   domesticShippingCny: number;
   internationalShippingCny: number;
+  pendingShippingCny?: number;
   shippingEstimated: boolean;
   repairCny: number;
   otherCostCny: number;
@@ -32,7 +33,7 @@ export type AssetView = {
   valuationSource: string;
   valuationDate: string | null;
   valuationKeyword: string | null;
-  valuationSampleSize: number;
+  valuationSampleSize: number | null;
   valuationCondition: string | null;
   valuationConfidence: number;
   valuationCollectionMethod: string;
@@ -155,12 +156,13 @@ export type ValuationHistoryView = {
   medianCny: number;
   highCny: number;
   expectedCny: number;
-  sampleSize: number;
+  sampleSize: number | null;
   confidence: number;
   collectionMethod: string;
 };
 
 export type DashboardData = {
+  dataSource?: "baseline" | "cloudflare-d1" | "supabase";
   migrationReadOnly: boolean;
   summary: {
     totalInvested: number;

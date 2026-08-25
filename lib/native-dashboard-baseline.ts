@@ -2,6 +2,7 @@ import type { DashboardData } from "../db/queries";
 
 export function createNativeDashboardBaseline(): DashboardData {
   return {
+    dataSource: "baseline",
     migrationReadOnly: true,
     summary: {
       totalInvested: 0,
