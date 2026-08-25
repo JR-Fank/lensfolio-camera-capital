@@ -40,5 +40,8 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+/evidence/
+/screenshots/
+/normalized-evidence/
 /.supabase/
 /supabase/.temp/

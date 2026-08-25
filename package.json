@@ -9,7 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "npm run lint && npm run typecheck",
+    "test": "npm run lint && npm run typecheck && npm run test:evidence",
+    "test:evidence": "node --test tests/evidence-import.test.mjs",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "db:generate": "drizzle-kit generate"

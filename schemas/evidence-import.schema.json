@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lensfolio.local/schemas/evidence-import.schema.json",
+  "title": "Lensfolio Codex Evidence Import",
+  "oneOf": [
+    { "$ref": "#/$defs/purchaseEvidence" },
+    { "$ref": "#/$defs/logisticsEvidence" }
+  ],
+  "$defs": {
+    "confidence": {
+      "type": "string",
+      "enum": ["confirmed", "uncertain"]
+    },
+    "field": {
+      "type": "object",
+      "required": ["value", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {},
+        "status": { "$ref": "#/$defs/confidence" },
+        "evidence": { "type": ["string", "null"] },
+        "candidates": { "type": "array" }
+      }
+    },
+    "confirmation": {
+      "type": "object",
+      "required": ["status", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "type": "string", "enum": ["pending", "confirmed"] },
+        "text": { "type": ["string", "null"] },
+        "confirmed_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "required": [
+        "brand",
+        "model",
+        "serial_number",
+        "measured_weight_g",
+        "condition",
+        "status",
+        "notes",
+        "allocated_cost_cny",
+        "allocation_method"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "brand": { "$ref": "#/$defs/field" },
+        "model": { "$ref": "#/$defs/field" },
+        "serial_number": { "$ref": "#/$defs/field" },
+        "measured_weight_g": { "$ref": "#/$defs/field" },
+        "condition": { "$ref": "#/$defs/field" },
+        "status": { "$ref": "#/$defs/field" },
+        "notes": { "$ref": "#/$defs/field" },
+        "purchase_price_jpy": { "$ref": "#/$defs/field" },
+        "allocated_cost_cny": { "$ref": "#/$defs/field" },
+        "allocation_method": { "$ref": "#/$defs/field" }
+      }
+    },
+    "purchaseEvidence": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "evidence_type",
+        "source_files",
+        "purchase",
+        "assets",
+        "confirmation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "const": "1.0" },
+        "evidence_type": { "const": "purchase" },
+        "source_files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "purchase": {
+          "type": "object",
+          "required": [
+            "purchase_date",
+            "platform",
+            "seller",
+            "order_reference",
+            "purchase_price_jpy",
+            "actual_paid_cny",
+            "exchange_rate_jpy_to_cny",
+            "fee_jpy",
+            "domestic_shipping_jpy",
+            "coupon_jpy",
+            "photo_fee_jpy"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "purchase_date": { "$ref": "#/$defs/field" },
+            "platform": { "$ref": "#/$defs/field" },
+            "seller": { "$ref": "#/$defs/field" },
+            "order_reference": { "$ref": "#/$defs/field" },
+            "purchase_price_jpy": { "$ref": "#/$defs/field" },
+            "actual_paid_cny": { "$ref": "#/$defs/field" },
+            "exchange_rate_jpy_to_cny": { "$ref": "#/$defs/field" },
+            "fee_jpy": { "$ref": "#/$defs/field" },
+            "domestic_shipping_jpy": { "$ref": "#/$defs/field" },
+            "coupon_jpy": { "$ref": "#/$defs/field" },
+            "photo_fee_jpy": { "$ref": "#/$defs/field" }
+          }
+        },
+        "assets": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/asset" }
+        },
+        "confirmation": { "$ref": "#/$defs/confirmation" }
+      }
+    },
+    "assetMatch": {
+      "type": "object",
+      "required": [
+        "asset_id",
+        "legacy_id",
+        "brand",
+        "model",
+        "weight_snapshot_g",
+        "allocation_method",
+        "allocation_ratio",
+        "allocated_shipping_cny"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": { "$ref": "#/$defs/field" },
+        "legacy_id": { "$ref": "#/$defs/field" },
+        "brand": { "$ref": "#/$defs/field" },
+        "model": { "$ref": "#/$defs/field" },
+        "weight_snapshot_g": { "$ref": "#/$defs/field" },
+        "allocation_method": { "$ref": "#/$defs/field" },
+        "allocation_ratio": { "$ref": "#/$defs/field" },
+        "allocated_shipping_cny": { "$ref": "#/$defs/field" }
+      }
+    },
+    "trackingEvent": {
+      "type": "object",
+      "required": ["raw_status", "status", "status_label", "location", "occurred_at"],
+      "additionalProperties": false,
+      "properties": {
+        "raw_status": { "$ref": "#/$defs/field" },
+        "status": { "$ref": "#/$defs/field" },
+        "status_label": { "$ref": "#/$defs/field" },
+        "location": { "$ref": "#/$defs/field" },
+        "occurred_at": { "$ref": "#/$defs/field" }
+      }
+    },
+    "logisticsEvidence": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "evidence_type",
+        "source_files",
+        "logistics",
+        "associated_assets",
+        "tracking_events",
+        "confirmation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "const": "1.0" },
+        "evidence_type": { "const": "logistics" },
+        "source_files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "logistics": {
+          "type": "object",
+          "required": [
+            "carrier",
+            "tracking_number",
+            "origin",
+            "destination",
+            "shipping_date",
+            "bare_weight_g",
+            "chargeable_weight_g",
+            "shipping_cost_jpy",
+            "shipping_cost_cny",
+            "payment_status",
+            "status"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "carrier": { "$ref": "#/$defs/field" },
+            "tracking_number": { "$ref": "#/$defs/field" },
+            "origin": { "$ref": "#/$defs/field" },
+            "destination": { "$ref": "#/$defs/field" },
+            "shipping_date": { "$ref": "#/$defs/field" },
+            "bare_weight_g": { "$ref": "#/$defs/field" },
+            "chargeable_weight_g": { "$ref": "#/$defs/field" },
+            "shipping_cost_jpy": { "$ref": "#/$defs/field" },
+            "shipping_cost_cny": { "$ref": "#/$defs/field" },
+            "payment_status": { "$ref": "#/$defs/field" },
+            "status": { "$ref": "#/$defs/field" }
+          }
+        },
+        "associated_assets": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/assetMatch" }
+        },
+        "tracking_events": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/trackingEvent" }
+        },
+        "confirmation": { "$ref": "#/$defs/confirmation" }
+      }
+    }
+  }
+}
