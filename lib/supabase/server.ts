@@ -1,7 +1,6 @@
 import "server-only";
 
 import { createServerClient } from "@supabase/ssr";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
 function publicConfiguration() {
@@ -48,17 +47,4 @@ export async function getCurrentUser() {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getUser();
   return error ? null : data.user;
-}
-
-export function createSecretClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const secretKey = process.env.SUPABASE_SECRET_KEY;
-
-  if (!url || !secretKey) {
-    throw new Error("Supabase server environment variables are not configured.");
-  }
-
-  return createSupabaseClient(url, secretKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
 }

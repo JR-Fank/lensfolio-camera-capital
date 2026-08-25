@@ -9,7 +9,7 @@ current Sites application.
 
 Baseline:
 
-- Source repository: `/Users/jr-fank/Documents/Codex/2026-08-20/referenced-chatgpt-conversation-this-is-an`
+- Source repository: `<repo-root>`
 - Production commit: `8c93905a4a1e2b7d51657f74491efa99ae461bf7`
 - Production tag: `sites/v3-pre-migration`
 - Migration branch: `migration/supabase-vercel`
