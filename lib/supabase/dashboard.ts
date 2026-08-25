@@ -26,6 +26,7 @@ type PortfolioMetricsRow = {
   logistics_cost_cny: number | string; repair_cost_cny: number | string; other_cost_cny: number | string;
 };
 type CostEntryRow = { asset_id: string; amount_cny: number | string };
+type StatusEventRow = { asset_id: string; note: string | null; occurred_at: string };
 type ValuationRow = {
   id: string; asset_id: string; market_source_id: string | null; low: number | string | null;
   median: number | string; high: number | string | null; sample_count: number | null;
@@ -47,6 +48,7 @@ type AssetBuildContext = {
   sourceById: Map<string, string>;
   purchaseItemByAsset: Map<string, PurchaseItemRow>;
   purchaseOrderById: Map<string, PurchaseOrderRow>;
+  noteByAsset: Map<string, string>;
 };
 
 const assetSelect = "id,portfolio_id,legacy_id,brand,model,serial_number,condition,operational_status,repair_status,acquired_at,measured_weight_g";
@@ -74,7 +76,7 @@ async function sessionPortfolio() {
 
 export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> => {
   const { supabase, portfolioId } = await sessionPortfolio();
-  const [metricsResult, assetsResult, financialsResult, pendingResult, valuationsResult, sourcesResult, purchaseItemsResult, purchaseOrdersResult] = await Promise.all([
+  const [metricsResult, assetsResult, financialsResult, pendingResult, valuationsResult, sourcesResult, purchaseItemsResult, purchaseOrdersResult, statusEventsResult] = await Promise.all([
     supabase.from("portfolio_metrics").select("asset_count,total_carrying_cost_cny,current_valuation_cny,unrealized_profit_cny,realized_profit_cny,investment_roi,logistics_cost_cny,repair_cost_cny,other_cost_cny").eq("portfolio_id", portfolioId).single(),
     supabase.from("assets").select(assetSelect).eq("portfolio_id", portfolioId).order("acquired_at", { ascending: true }),
     supabase.from("asset_financials").select(financialSelect).eq("portfolio_id", portfolioId),
@@ -83,6 +85,7 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
     supabase.from("market_sources").select("id,name").eq("portfolio_id", portfolioId),
     supabase.from("purchase_items").select(purchaseItemSelect).eq("portfolio_id", portfolioId),
     supabase.from("purchase_orders").select(purchaseOrderSelect).eq("portfolio_id", portfolioId),
+    supabase.from("asset_status_events").select("asset_id,note,occurred_at").eq("portfolio_id", portfolioId).not("note", "is", null).order("occurred_at", { ascending: false }),
   ]);
   const metrics = row<PortfolioMetricsRow>("portfolio metrics", metricsResult);
   const assetRows = rows<AssetRow>("assets", assetsResult);
@@ -94,6 +97,7 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
     sources: rows<MarketSourceRow>("market sources", sourcesResult),
     purchaseItems: rows<PurchaseItemRow>("purchase items", purchaseItemsResult),
     purchaseOrders: rows<PurchaseOrderRow>("purchase orders", purchaseOrdersResult),
+    statusEvents: rows<StatusEventRow>("asset status notes", statusEventsResult),
   });
   const assets = assetRows.map((asset) => buildAsset(asset, context));
   const pendingShipping = sum(context.pendingByAsset.values());
@@ -129,11 +133,12 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
 export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise<DashboardData | null> => {
   if (!isUuid(assetId)) return null;
   const { supabase, portfolioId } = await sessionPortfolio();
-  const [assetResult, financialResult, pendingResult, valuationsResult] = await Promise.all([
+  const [assetResult, financialResult, pendingResult, valuationsResult, statusEventsResult] = await Promise.all([
     supabase.from("assets").select(assetSelect).eq("portfolio_id", portfolioId).eq("id", assetId).maybeSingle(),
     supabase.from("asset_financials").select(financialSelect).eq("portfolio_id", portfolioId).eq("asset_id", assetId).maybeSingle(),
     supabase.from("cost_entries").select("asset_id,amount_cny").eq("portfolio_id", portfolioId).eq("asset_id", assetId).eq("entry_status", "pending").eq("cost_type", "international_shipping"),
     supabase.from("valuation_snapshots").select(valuationSelect).eq("portfolio_id", portfolioId).eq("asset_id", assetId).order("valued_at", { ascending: false }),
+    supabase.from("asset_status_events").select("asset_id,note,occurred_at").eq("portfolio_id", portfolioId).eq("asset_id", assetId).not("note", "is", null).order("occurred_at", { ascending: false }),
   ]);
   const asset = optionalRow<AssetRow>("asset", assetResult);
   if (!asset) return null;
@@ -159,6 +164,7 @@ export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise
     sources: rows<MarketSourceRow>("asset market source", sourcesResult),
     purchaseItems,
     purchaseOrders: rows<PurchaseOrderRow>("asset purchase order", purchaseOrdersResult),
+    statusEvents: rows<StatusEventRow>("asset status notes", statusEventsResult),
   });
   const assetView = buildAsset(asset, context);
   const pendingShipping = assetView.pendingShippingCny ?? 0;
@@ -190,6 +196,7 @@ export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise
 function buildContext(input: {
   financials: FinancialRow[]; pendingEntries: CostEntryRow[]; valuations: ValuationRow[];
   sources: MarketSourceRow[]; purchaseItems: PurchaseItemRow[]; purchaseOrders: PurchaseOrderRow[];
+  statusEvents: StatusEventRow[];
 }): AssetBuildContext {
   const valuationByAsset = new Map<string, ValuationRow>();
   for (const valuation of input.valuations) {
@@ -199,6 +206,10 @@ function buildContext(input: {
   for (const entry of input.pendingEntries) {
     pendingByAsset.set(entry.asset_id, (pendingByAsset.get(entry.asset_id) ?? 0) + money(entry.amount_cny));
   }
+  const noteByAsset = new Map<string, string>();
+  for (const event of input.statusEvents) {
+    if (event.note && !noteByAsset.has(event.asset_id)) noteByAsset.set(event.asset_id, event.note);
+  }
   return {
     financialByAsset: new Map(input.financials.map((value) => [value.asset_id, value])),
     pendingByAsset,
@@ -206,6 +217,7 @@ function buildContext(input: {
     sourceById: new Map(input.sources.map((value) => [value.id, value.name])),
     purchaseItemByAsset: new Map(input.purchaseItems.map((value) => [value.asset_id, value])),
     purchaseOrderById: new Map(input.purchaseOrders.map((value) => [value.id, value])),
+    noteByAsset,
   };
 }
 
@@ -226,7 +238,7 @@ function buildAsset(asset: AssetRow, context: AssetBuildContext): AssetView {
     paymentMethod: null, paidAt: purchaseOrder?.ordered_at ?? null,
     weightG: asset.measured_weight_g ?? 0, acquiredAt: asset.acquired_at?.slice(0, 10) ?? "",
     lifecycleStatus: operationalStatus(asset.operational_status), repairStatus: repairStatus(asset.repair_status),
-    conditionGrade: asset.condition, notes: null, purchaseJpy: money(purchaseItem?.original_price_jpy),
+    conditionGrade: asset.condition, notes: context.noteByAsset.get(asset.id) ?? null, purchaseJpy: money(purchaseItem?.original_price_jpy),
     purchaseCny: money(financial.acquisition_cost_cny), exchangeRate: money(purchaseOrder?.exchange_rate_jpy_to_cny),
     domesticShippingJpy: money(purchaseOrder?.domestic_shipping_jpy), domesticShippingCny: 0,
     internationalShippingCny: money(financial.logistics_cost_cny),

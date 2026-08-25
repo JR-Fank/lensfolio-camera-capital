@@ -50,10 +50,12 @@ export default function ManagementApp({
   initialData,
   section = "dashboard",
   selectedAssetId,
+  canCreateAsset = false,
 }: {
   initialData: DashboardData;
   section?: Section;
   selectedAssetId?: string;
+  canCreateAsset?: boolean;
 }) {
   const [data, setData] = useState(initialData);
   const [modal, setModal] = useState<ModalKind>(null);
@@ -149,7 +151,7 @@ export default function ManagementApp({
   const page = selectedAsset
     ? <AssetDetail asset={selectedAsset} data={data} open={open} />
     : section === "dashboard" ? <DashboardView data={data} open={open} />
-      : section === "assets" ? <AssetsView data={data} open={open} />
+      : section === "assets" ? <AssetsView data={data} canCreateAsset={canCreateAsset} />
         : section === "logistics" ? <LogisticsViewPage data={data} open={open} refreshTracking={refreshTracking} busy={busy} />
           : section === "repairs" ? <RepairsView data={data} open={open} />
             : section === "sales" ? <SalesView data={data} open={open} />
@@ -182,7 +184,9 @@ export default function ManagementApp({
       <main className="workspace">
         <header className="mobile-bar">
           <Link href="/" className="mini-mark">LF</Link><span>{copy.title}</span>
-          {!migrationReadOnly && <button type="button" onClick={() => open("asset")}>＋</button>}
+          {section === "assets" && !selectedAsset && canCreateAsset
+            ? <Link className="mobile-add" href="/assets/new" aria-label="新增相机">＋</Link>
+            : <span aria-hidden="true" />}
         </header>
         <header className="page-head">
           <div>
@@ -325,12 +329,12 @@ function ChartHead({ label, title, note }: { label: string; title: string; note:
   return <header className="chart-head"><div><p>{label}</p><h3>{title}</h3></div><span>{note}</span></header>;
 }
 
-function AssetsView({ data, open }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>, id?: string) => void }) {
+function AssetsView({ data, canCreateAsset }: { data: DashboardData; canCreateAsset: boolean }) {
   return (
     <>
       <div className="toolbar-row">
         <div className="position-summary"><span>持有中 <b>{data.assets.filter((asset) => asset.lifecycleStatus !== "已出售").length}</b></span><span>待检测 <b>{data.assets.filter((asset) => asset.repairStatus === "未检测").length}</b></span><span>可出售 <b>{data.assets.filter((asset) => asset.lifecycleStatus === "可出售").length}</b></span></div>
-        {!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("asset")}>＋ 新增机器</button>}
+        {canCreateAsset && <Link className="primary-action" href="/assets/new">＋ 新增相机</Link>}
       </div>
       <div className="asset-card-grid wide">
         {data.assets.map((asset) => <InvestmentCard asset={asset} open={open} readOnly={data.migrationReadOnly} key={asset.id} />)}
