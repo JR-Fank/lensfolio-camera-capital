@@ -28,6 +28,7 @@ const sectionCopy: Record<Section, { eyebrow: string; title: string; description
   analysis: { eyebrow: "UNDERWRITING", title: "投资分析", description: "在买入或维修之前，用退出价格模拟回报与安全边际。" },
 };
 
+const BUSINESS_TIME_ZONE = "Asia/Hong_Kong";
 const cny = (value: number, digits = 0) => new Intl.NumberFormat("zh-CN", {
   style: "currency", currency: "CNY", maximumFractionDigits: digits,
 }).format(value);
@@ -37,8 +38,11 @@ const signed = (value: number) => `${value >= 0 ? "+" : "−"}${cny(Math.abs(val
 const pct = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 const sampleCount = (value: number | null) => value === null ? "样本未记录" : `${value} 条`;
 const date = (value: string | null) => value
-  ? new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: value.includes(":") ? "2-digit" : undefined, minute: value.includes(":") ? "2-digit" : undefined }).format(new Date(value.replace(" ", "T") + (value.includes("T") ? "" : "+08:00")))
+  ? new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: value.includes(":") ? "2-digit" : undefined, minute: value.includes(":") ? "2-digit" : undefined, timeZone: BUSINESS_TIME_ZONE }).format(new Date(value.replace(" ", "T") + (value.includes("T") ? "" : "+08:00")))
   : "—";
+const refreshedTime = (value: string) => new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit", minute: "2-digit", timeZone: BUSINESS_TIME_ZONE,
+}).format(new Date(value));
 const today = () => new Date().toISOString().slice(0, 10);
 const fullName = (asset: AssetView) => `${asset.brand} ${asset.model}${asset.variant ? ` ${asset.variant}` : ""}`;
 
@@ -188,7 +192,7 @@ export default function ManagementApp({
           </div>
           <div className="head-meta">
             <span><i /> {migrationReadOnly ? "READ ONLY" : "LIVE LEDGER"}</span>
-            <small>刷新于 {new Date(data.refreshedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</small>
+            <small>刷新于 {refreshedTime(data.refreshedAt)}</small>
           </div>
         </header>
         {migrationReadOnly && <div className="migration-banner" role="status"><strong>Migration Protection Mode</strong><span>{MIGRATION_PROTECTION_MESSAGE}</span></div>}
