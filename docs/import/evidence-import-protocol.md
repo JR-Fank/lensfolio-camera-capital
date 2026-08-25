@@ -154,14 +154,26 @@ The screenshot binary is never stored in Git or in `audit_logs`. Source filename
 
 ## Operator commands
 
-Both scripts require a real user session token in `LENSFOLIO_USER_ACCESS_TOKEN`, plus the public Supabase URL and publishable key. The user token must be supplied through a secure local environment and never pasted into chat or committed. The scripts do not read `SUPABASE_SECRET_KEY` and never use service-role access.
+The public Supabase URL and publishable key belong in the ignored `.env.local` file. No secret/service key is used.
+
+Authenticate once in the local terminal. The default flow prompts for the existing owner's email and a hidden password; the password is sent directly to official Supabase Auth and is never saved. Projects configured to send an email OTP may use `--otp` instead.
 
 ```bash
-node scripts/import-purchase-evidence.mjs --input /outside/repo/purchase.json --portfolio-id <uuid>
-node scripts/import-purchase-evidence.mjs --input /outside/repo/purchase.json --portfolio-id <uuid> --apply --confirm-import
+node scripts/lensfolio-auth.mjs login
+node scripts/lensfolio-auth.mjs login --otp
+node scripts/lensfolio-auth.mjs status
+```
 
-node scripts/import-logistics-evidence.mjs --input /outside/repo/logistics.json --portfolio-id <uuid>
-node scripts/import-logistics-evidence.mjs --input /outside/repo/logistics.json --portfolio-id <uuid> --apply --confirm-import
+The resulting access and refresh session is stored at `.lensfolio/session.json`, with directory mode `0700` and file mode `0600`. Import scripts load it automatically and refresh expired access tokens through Supabase Auth. A failed refresh asks for a new login; it never falls back to `SUPABASE_SECRET_KEY`. `LENSFOLIO_USER_ACCESS_TOKEN` remains an optional, temporary debugging override only.
+
+The authenticated user must have exactly one owner/editor portfolio, or select one with `--portfolio-id`. Viewer and anonymous sessions are rejected before an RPC call.
+
+```bash
+node scripts/import-purchase-evidence.mjs /outside/repo/purchase.json
+node scripts/import-purchase-evidence.mjs /outside/repo/purchase.json --apply --confirm-import
+
+node scripts/import-logistics-evidence.mjs /outside/repo/logistics.json
+node scripts/import-logistics-evidence.mjs /outside/repo/logistics.json --apply --confirm-import
 ```
 
 After an apply, rerun the same command with `--verify` to read back the audit and affected records through the same authenticated RLS session.

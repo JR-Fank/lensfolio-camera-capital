@@ -454,10 +454,10 @@ export function parseCliArgs(argv) {
     else if (arg === "--confirm-import") args.confirmImport = true;
     else if (arg === "--input") args.input = argv[++index];
     else if (arg === "--portfolio-id") args.portfolioId = argv[++index];
+    else if (!arg.startsWith("--") && !args.input) args.input = arg;
     else throw new Error(`Unknown argument: ${arg}`);
   }
-  if (!args.input) throw new Error("--input is required.");
-  if (!args.portfolioId) throw new Error("--portfolio-id is required.");
+  if (!args.input) throw new Error("Evidence JSON path is required.");
   if (args.apply && !args.confirmImport) throw new Error("--apply also requires --confirm-import.");
   return args;
 }

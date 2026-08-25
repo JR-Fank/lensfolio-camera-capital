@@ -1,31 +1,13 @@
 #!/usr/bin/env node
 
 import { readFile } from "node:fs/promises";
-import { createClient } from "@supabase/supabase-js";
 import {
   assertConfirmation,
   buildPurchasePlan,
   parseCliArgs,
   publicPreview,
 } from "./lib/evidence-import.mjs";
-
-function authenticatedClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  const accessToken = process.env.LENSFOLIO_USER_ACCESS_TOKEN;
-  if (!url || !key || !accessToken) {
-    throw new Error(
-      "Database access requires NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, and LENSFOLIO_USER_ACCESS_TOKEN.",
-    );
-  }
-  return {
-    client: createClient(url, key, {
-      global: { headers: { Authorization: `Bearer ${accessToken}` } },
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    }),
-    accessToken,
-  };
-}
+import { getAuthenticatedContext } from "./lensfolio-auth.mjs";
 
 async function verify(client, plan, portfolioId) {
   const legacyId = `evidence:purchase:${plan.evidence_fingerprint}`;
@@ -81,30 +63,34 @@ async function main() {
   const args = parseCliArgs(process.argv.slice(2));
   const document = JSON.parse(await readFile(args.input, "utf8"));
   const plan = buildPurchasePlan(document);
-  console.log(JSON.stringify(publicPreview(plan), null, 2));
-
-  if (plan.blockers.length > 0) throw new Error("Import blocked by normalized evidence validation.");
-  if (!args.apply && !args.verify) return;
-
-  const { client, accessToken } = authenticatedClient();
-  const { data: authData, error: authError } = await client.auth.getUser(accessToken);
-  if (authError || !authData.user) throw authError ?? new Error("Authenticated user not found.");
-
-  if (args.verify) {
-    console.log(JSON.stringify(await verify(client, plan, args.portfolioId), null, 2));
-    return;
+  if (plan.blockers.length > 0) {
+    console.log(JSON.stringify(publicPreview(plan), null, 2));
+    throw new Error("Import blocked by normalized evidence validation.");
   }
 
+  const auth = await getAuthenticatedContext({ portfolioId: args.portfolioId });
+  console.log(JSON.stringify({
+    ...publicPreview(plan),
+    authenticated_role: auth.role,
+    portfolio_id: auth.portfolioId,
+  }, null, 2));
+
+  if (args.verify) {
+    console.log(JSON.stringify(await verify(auth.client, plan, auth.portfolioId), null, 2));
+    return;
+  }
+  if (!args.apply) return;
+
   assertConfirmation(document);
-  const { data, error } = await client.rpc("import_purchase_evidence", {
-    p_portfolio_id: args.portfolioId,
+  const { data, error } = await auth.client.rpc("import_purchase_evidence", {
+    p_portfolio_id: auth.portfolioId,
     p_evidence_fingerprint: plan.evidence_fingerprint,
     p_payload_hash: plan.payload_hash,
     p_source_files: plan.source_files,
     p_payload: plan.payload,
   });
   if (error) throw error;
-  console.log(JSON.stringify({ applied: true, importing_user: authData.user.id, result: data }, null, 2));
+  console.log(JSON.stringify({ applied: true, importing_user: auth.user.id, result: data }, null, 2));
 }
 
 main().catch((error) => {

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { readFile } from "node:fs/promises";
-import { createClient } from "@supabase/supabase-js";
 import {
   assertConfirmation,
   buildLogisticsPlan,
@@ -11,24 +10,7 @@ import {
   resolveAssetReferences,
   sha256,
 } from "./lib/evidence-import.mjs";
-
-function authenticatedClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  const accessToken = process.env.LENSFOLIO_USER_ACCESS_TOKEN;
-  if (!url || !key || !accessToken) {
-    throw new Error(
-      "Logistics matching requires NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, and LENSFOLIO_USER_ACCESS_TOKEN.",
-    );
-  }
-  return {
-    client: createClient(url, key, {
-      global: { headers: { Authorization: `Bearer ${accessToken}` } },
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    }),
-    accessToken,
-  };
-}
+import { getAuthenticatedContext } from "./lensfolio-auth.mjs";
 
 async function resolveAssets(client, plan, portfolioId) {
   const { data: assets, error } = await client
@@ -115,29 +97,30 @@ async function main() {
     throw new Error("Import blocked by normalized evidence validation.");
   }
 
-  const { client, accessToken } = authenticatedClient();
-  const { data: authData, error: authError } = await client.auth.getUser(accessToken);
-  if (authError || !authData.user) throw authError ?? new Error("Authenticated user not found.");
+  const auth = await getAuthenticatedContext({ portfolioId: args.portfolioId });
+  await resolveAssets(auth.client, plan, auth.portfolioId);
+  console.log(JSON.stringify({
+    ...publicPreview(plan),
+    authenticated_role: auth.role,
+    portfolio_id: auth.portfolioId,
+  }, null, 2));
 
-  await resolveAssets(client, plan, args.portfolioId);
-  console.log(JSON.stringify(publicPreview(plan), null, 2));
-
-  if (!args.apply && !args.verify) return;
   if (args.verify) {
-    console.log(JSON.stringify(await verify(client, plan, args.portfolioId), null, 2));
+    console.log(JSON.stringify(await verify(auth.client, plan, auth.portfolioId), null, 2));
     return;
   }
+  if (!args.apply) return;
 
   assertConfirmation(document);
-  const { data, error } = await client.rpc("import_logistics_evidence", {
-    p_portfolio_id: args.portfolioId,
+  const { data, error } = await auth.client.rpc("import_logistics_evidence", {
+    p_portfolio_id: auth.portfolioId,
     p_evidence_fingerprint: plan.evidence_fingerprint,
     p_payload_hash: plan.payload_hash,
     p_source_files: plan.source_files,
     p_payload: plan.payload,
   });
   if (error) throw error;
-  console.log(JSON.stringify({ applied: true, importing_user: authData.user.id, result: data }, null, 2));
+  console.log(JSON.stringify({ applied: true, importing_user: auth.user.id, result: data }, null, 2));
 }
 
 main().catch((error) => {

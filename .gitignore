@@ -43,5 +43,6 @@ yarn-error.log*
 /evidence/
 /screenshots/
 /normalized-evidence/
+/.lensfolio/
 /.supabase/
 /supabase/.temp/

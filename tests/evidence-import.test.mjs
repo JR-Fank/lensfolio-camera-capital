@@ -5,6 +5,7 @@ import {
   assertConfirmation,
   buildLogisticsPlan,
   buildPurchasePlan,
+  parseCliArgs,
   resolveAssetReferences,
   shippingEntryStatus,
   publicPreview,
@@ -155,6 +156,15 @@ test("confirmation gate requires exact user confirmation", () => {
   assert.throws(() => assertConfirmation(fixture), /确认录入/);
   fixture.confirmation = { status: "confirmed", text: "确认录入", confirmed_at: "2026-08-25T00:00:00Z" };
   assert.doesNotThrow(() => assertConfirmation(fixture));
+});
+
+test("import CLI accepts the evidence path without requiring a portfolio or token argument", () => {
+  assert.deepEqual(parseCliArgs(["fixture.json"]), {
+    apply: false,
+    verify: false,
+    confirmImport: false,
+    input: "fixture.json",
+  });
 });
 
 test("logistics evidence supports multi-asset allocation and pending versus posted cost state", () => {
