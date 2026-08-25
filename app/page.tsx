@@ -1,8 +1,8 @@
-import { getDashboardData } from "../db/queries";
+import { createNativeDashboardBaseline } from "../lib/native-dashboard-baseline";
 import ManagementApp from "./ManagementApp";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  return <ManagementApp initialData={await getDashboardData()} />;
+  return <ManagementApp initialData={createNativeDashboardBaseline()} />;
 }

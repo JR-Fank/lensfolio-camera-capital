@@ -939,7 +939,7 @@ function validateChecksumFile(directory, checksumsPath) {
   const lines = readFileSync(checksumsPath, "utf8").split(/\r?\n/).filter(Boolean);
   if (lines.length === 0) throw new Error("checksums.sha256 is empty");
   for (const line of lines) {
-    const match = line.match(/^([a-f0-9]{64})  (.+)$/i);
+    const match = line.match(/^([a-f0-9]{64}) {2}(.+)$/i);
     if (!match) throw new Error(`Invalid checksum line: ${line}`);
     const [, expected, relativePath] = match;
     const filePath = join(directory, relativePath);
