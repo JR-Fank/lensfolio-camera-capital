@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import type { AssetView, DashboardData, ValuationHistoryView } from "../../db/queries";
+import type { AssetView, DashboardData, LogisticsView, ValuationHistoryView } from "../../db/queries";
 import { projectAssetValuation, projectPortfolioValuation } from "../valuation-semantics";
 import { createClient } from "./server";
 
@@ -139,6 +139,200 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
     refreshedAt: new Date().toISOString(),
   };
 });
+
+
+type ShipmentRow = {
+  id: string;
+  legacy_id: string | null;
+  carrier: string | null;
+  tracking_number: string | null;
+  status: string;
+  shipped_at: string | null;
+  delivered_at: string | null;
+  actual_paid_cny: number | string;
+  budget_cny: number | string;
+  origin: string | null;
+  destination: string | null;
+  bare_weight_g: number | null;
+  chargeable_weight_g: number | null;
+  legacy_status: string | null;
+  updated_at: string;
+};
+
+type ShipmentItemRow = {
+  shipment_id: string;
+  asset_id: string;
+  weight_snapshot_g: number | null;
+  allocation_method: string;
+  allocated_shipping_cny: number | string;
+};
+
+type TrackingEventRow = {
+  id: string;
+  shipment_id: string;
+  status: string;
+  description: string | null;
+  location: string | null;
+  occurred_at: string;
+  recorded_at: string;
+  raw_status: string | null;
+};
+
+export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> => {
+  const dashboard = await getSupabaseDashboardData();
+  const { supabase, portfolioId } = await sessionPortfolio();
+
+  const [shipmentsResult, itemsResult, eventsResult, assetsResult] = await Promise.all([
+    supabase
+      .from("shipments")
+      .select("id,legacy_id,carrier,tracking_number,status,shipped_at,delivered_at,actual_paid_cny,budget_cny,origin,destination,bare_weight_g,chargeable_weight_g,legacy_status,updated_at")
+      .eq("portfolio_id", portfolioId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("shipment_items")
+      .select("shipment_id,asset_id,weight_snapshot_g,allocation_method,allocated_shipping_cny")
+      .eq("portfolio_id", portfolioId),
+    supabase
+      .from("tracking_events")
+      .select("id,shipment_id,status,description,location,occurred_at,recorded_at,raw_status")
+      .eq("portfolio_id", portfolioId)
+      .order("occurred_at", { ascending: true }),
+    supabase
+      .from("assets")
+      .select("id,brand,model")
+      .eq("portfolio_id", portfolioId),
+  ]);
+
+  const shipments = rows<ShipmentRow>("shipments", shipmentsResult);
+  const items = rows<ShipmentItemRow>("shipment items", itemsResult);
+  const events = rows<TrackingEventRow>("tracking events", eventsResult);
+  const assets = rows<{ id: string; brand: string; model: string }>("shipment assets", assetsResult);
+
+  const assetNameById = new Map(
+    assets.map((asset) => [asset.id, `${asset.brand} ${asset.model}`])
+  );
+
+  const itemsByShipment = new Map<string, ShipmentItemRow[]>();
+  for (const item of items) {
+    const list = itemsByShipment.get(item.shipment_id) ?? [];
+    list.push(item);
+    itemsByShipment.set(item.shipment_id, list);
+  }
+
+  const eventsByShipment = new Map<string, TrackingEventRow[]>();
+  for (const event of events) {
+    const list = eventsByShipment.get(event.shipment_id) ?? [];
+    list.push(event);
+    eventsByShipment.set(event.shipment_id, list);
+  }
+
+  const logistics: LogisticsView[] = shipments.map((shipment) => {
+    const shipmentItems = itemsByShipment.get(shipment.id) ?? [];
+    const shipmentEvents = eventsByShipment.get(shipment.id) ?? [];
+    const actualPaid = money(shipment.actual_paid_cny);
+    const budget = money(shipment.budget_cny);
+    const shippingCny = actualPaid > 0 ? actualPaid : budget;
+    const isEstimated = actualPaid <= 0 && budget > 0;
+    const chargeableWeightG = whole(shipment.chargeable_weight_g);
+
+    const allocations = shipmentItems.map((item) => ({
+      logisticsOrderId: shipment.id,
+      cameraId: item.asset_id,
+      cameraName: assetNameById.get(item.asset_id) ?? "Unknown asset",
+      weightG: whole(item.weight_snapshot_g),
+      allocatedShippingCny: money(item.allocated_shipping_cny),
+    }));
+
+    const mappedEvents = shipmentEvents.map((event) => ({
+      id: event.id,
+      logisticsOrderId: shipment.id,
+      occurredAt: event.occurred_at,
+      rawStatus: event.raw_status ?? event.status,
+      statusLabel: event.raw_status ?? event.status,
+      details: event.description,
+      office: event.location,
+      country: null,
+      postalCode: null,
+    }));
+
+    const latest = shipmentEvents.at(-1);
+    const transitEnd = shipment.delivered_at ?? latest?.occurred_at ?? null;
+    const totalTransitDays =
+      shipment.shipped_at && transitEnd
+        ? Math.max(
+            0,
+            (new Date(transitEnd).getTime() - new Date(shipment.shipped_at).getTime()) /
+              86_400_000
+          )
+        : null;
+
+    return {
+      id: shipment.id,
+      batchCode: shipment.legacy_id ?? shipment.id.slice(0, 8),
+      carrier: shipment.carrier ?? "未记录承运商",
+      trackingNumber: shipment.tracking_number,
+      origin: shipment.origin ?? "未记录",
+      destination: shipment.destination ?? "未记录",
+      status: shipmentStatus(shipment.status),
+      latestEvent:
+        latest?.raw_status ??
+        latest?.status ??
+        shipment.legacy_status ??
+        null,
+      estimatedArrivalAt: null,
+      sellerShippedAt: null,
+      warehouseInAt: null,
+      internationalShippedAt: shipment.shipped_at,
+      hongKongArrivedAt: null,
+      deliveredAt: shipment.delivered_at,
+      bareWeightG: whole(shipment.bare_weight_g),
+      chargeableWeightG,
+      shippingJpy: 0,
+      shippingCny,
+      allocationMethod: allocationMethod(shipmentItems[0]?.allocation_method),
+      isEstimated,
+      lastCheckedAt: latest?.recorded_at ?? shipment.updated_at ?? null,
+      trackingSource: shipment.tracking_number ? "Supabase tracking events" : null,
+      trackingError: null,
+      anomaly: null,
+      notes: shipment.legacy_status,
+      itemCount: shipmentItems.length,
+      cameraNames: allocations.map((item) => item.cameraName).join(" · "),
+      totalTransitDays,
+      costPerKg:
+        chargeableWeightG > 0 ? shippingCny / (chargeableWeightG / 1000) : 0,
+      costPerCamera:
+        shipmentItems.length > 0 ? shippingCny / shipmentItems.length : 0,
+      allocations,
+      events: mappedEvents,
+    };
+  });
+
+  return {
+    ...dashboard,
+    logistics,
+  };
+});
+
+function shipmentStatus(value: string) {
+  return ({
+    draft: "待处理",
+    booked: "已预约",
+    in_transit: "运输中",
+    customs: "清关中",
+    delivered: "已签收",
+    cancelled: "已取消",
+  } as Record<string, string>)[value] ?? value;
+}
+
+function allocationMethod(value: string | undefined) {
+  return ({
+    equal: "平均分摊",
+    weight: "按重量分摊",
+    manual: "手工分摊",
+    legacy_equal_allocation: "历史平均分摊",
+  } as Record<string, string>)[value ?? ""] ?? value ?? "未记录";
+}
 
 export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise<DashboardData | null> => {
   if (!isUuid(assetId)) return null;
