@@ -178,8 +178,8 @@ export default function ManagementApp({
           ))}
         </nav>
         <div className="rail-status">
-          <i /><span>{migrationReadOnly ? "MIGRATION PROTECTION" : "DATABASE ONLINE"}</span>
-          <small>{data.dataSource === "supabase" ? "SUPABASE · RLS READ ONLY" : migrationReadOnly ? "READ ONLY · D1 FROZEN" : "D1 · 持久化存储"}</small>
+          <i /><span>{data.dataSource === "supabase" ? "DATABASE ONLINE" : migrationReadOnly ? "MIGRATION PROTECTION" : "DATABASE ONLINE"}</span>
+          <small>{data.dataSource === "supabase" ? "SUPABASE · RLS PROTECTED" : migrationReadOnly ? "READ ONLY · D1 FROZEN" : "D1 · 持久化存储"}</small>
         </div>
       </aside>
 
@@ -197,11 +197,11 @@ export default function ManagementApp({
             <p>{copy.description}</p>
           </div>
           <div className="head-meta">
-            <span><i /> {migrationReadOnly ? "READ ONLY" : "LIVE LEDGER"}</span>
+            <span><i /> {data.dataSource === "supabase" ? "SUPABASE ONLINE" : migrationReadOnly ? "READ ONLY" : "LIVE LEDGER"}</span>
             <small>刷新于 {refreshedTime(data.refreshedAt)}</small>
           </div>
         </header>
-        {migrationReadOnly && <div className="migration-banner" role="status"><strong>Migration Protection Mode</strong><span>{MIGRATION_PROTECTION_MESSAGE}</span></div>}
+        {migrationReadOnly && data.dataSource !== "supabase" && <div className="migration-banner" role="status"><strong>Migration Protection Mode</strong><span>{MIGRATION_PROTECTION_MESSAGE}</span></div>}
         {notice && <div className={`notice ${notice.includes("失败") || notice.includes("请") ? "error" : ""}`} role="status">{notice}</div>}
         {page}
         <footer className="system-footer">
