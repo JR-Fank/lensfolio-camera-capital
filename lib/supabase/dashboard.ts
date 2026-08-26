@@ -255,13 +255,24 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       postalCode: null,
     }));
 
+    const findTrackingEvent = (...labels: string[]) =>
+      shipmentEvents.find((event) => {
+        const value = `${event.raw_status ?? ""} ${event.status}`.toLowerCase();
+        return labels.some((label) => value.includes(label.toLowerCase()));
+      });
+
+    const postingEvent = findTrackingEvent("Posting/Collection");
+    const dispatchEvent = findTrackingEvent("Dispatch from outward office of exchange");
+    const inwardArrivalEvent = findTrackingEvent("Arrival at inward office of exchange");
     const latest = shipmentEvents.at(-1);
+
+    const transitStart = dispatchEvent?.occurred_at ?? shipment.shipped_at;
     const transitEnd = shipment.delivered_at ?? latest?.occurred_at ?? null;
     const totalTransitDays =
-      shipment.shipped_at && transitEnd
+      transitStart && transitEnd
         ? Math.max(
             0,
-            (new Date(transitEnd).getTime() - new Date(shipment.shipped_at).getTime()) /
+            (new Date(transitEnd).getTime() - new Date(transitStart).getTime()) /
               86_400_000
           )
         : null;
@@ -280,10 +291,10 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
         shipment.legacy_status ??
         null,
       estimatedArrivalAt: null,
-      sellerShippedAt: null,
+      sellerShippedAt: postingEvent?.occurred_at ?? null,
       warehouseInAt: null,
-      internationalShippedAt: shipment.shipped_at,
-      hongKongArrivedAt: null,
+      internationalShippedAt: dispatchEvent?.occurred_at ?? shipment.shipped_at,
+      hongKongArrivedAt: inwardArrivalEvent?.occurred_at ?? null,
       deliveredAt: shipment.delivered_at,
       bareWeightG: whole(shipment.bare_weight_g),
       chargeableWeightG,
@@ -291,7 +302,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       shippingCny,
       allocationMethod: allocationMethod(shipmentItems[0]?.allocation_method),
       isEstimated,
-      lastCheckedAt: latest?.recorded_at ?? shipment.updated_at ?? null,
+      lastCheckedAt: null,
       trackingSource: shipment.tracking_number ? "Supabase tracking events" : null,
       trackingError: null,
       anomaly: null,
