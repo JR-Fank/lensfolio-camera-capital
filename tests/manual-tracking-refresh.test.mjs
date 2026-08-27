@@ -189,7 +189,7 @@ test("successful sync sends all events to one atomic completion call", async () 
 
 test("database migration enforces invoker/RLS semantics and event idempotency", async () => {
   const migration = await readFile(new URL(
-    "../supabase/migrations/20260821001500_create_manual_tracking_refresh_rpc.sql",
+    "../supabase/migrations/20260821001600_fix_manual_tracking_refresh_json_precedence.sql",
     import.meta.url,
   ), "utf8");
   const baseSchema = await readFile(new URL(
@@ -203,11 +203,37 @@ test("database migration enforces invoker/RLS semantics and event idempotency", 
   assert.match(migration, /event->>'raw_status' = 'Final delivery'/);
 });
 
+test("follow-up migration parenthesizes JSON extraction before both identifier concatenations", async () => {
+  const [original, fixed] = await Promise.all([
+    readFile(new URL(
+      "../supabase/migrations/20260821001500_create_manual_tracking_refresh_rpc.sql",
+      import.meta.url,
+    ), "utf8"),
+    readFile(new URL(
+      "../supabase/migrations/20260821001600_fix_manual_tracking_refresh_json_precedence.sql",
+      import.meta.url,
+    ), "utf8"),
+  ]);
+  const safeConcatenations = fixed.match(/\|\| \(event->>'event_fingerprint'\)/g) ?? [];
+  assert.equal(safeConcatenations.length, 2);
+  assert.doesNotMatch(fixed, /\|\| event->>'event_fingerprint'/);
+
+  const originalFunction = original.slice(original.indexOf("create or replace function"));
+  const fixedFunction = fixed.slice(fixed.indexOf("create or replace function"));
+  assert.equal(
+    fixedFunction.replaceAll(
+      "|| (event->>'event_fingerprint')",
+      "|| event->>'event_fingerprint'",
+    ),
+    originalFunction,
+  );
+});
+
 test("manual tracking persistence cannot mutate financial or allocation data", async () => {
   const sources = await Promise.all([
     readFile(new URL("../lib/supabase/tracking.ts", import.meta.url), "utf8"),
     readFile(new URL(
-      "../supabase/migrations/20260821001500_create_manual_tracking_refresh_rpc.sql",
+      "../supabase/migrations/20260821001600_fix_manual_tracking_refresh_json_precedence.sql",
       import.meta.url,
     ), "utf8"),
   ]);
