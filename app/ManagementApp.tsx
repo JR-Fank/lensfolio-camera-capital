@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, ReactNode, useEffect, useState } from "react";
 import type { AssetView, DashboardData, LogisticsView } from "../db/queries";
 import { MIGRATION_PROTECTION_MESSAGE } from "../lib/migration-protection";
+import { isJapanPostTrackingNumber } from "../lib/tracking/japan-post";
 
 type Section = "dashboard" | "assets" | "logistics" | "repairs" | "sales" | "buy-decision" | "analysis";
 type ModalKind = "asset" | "repair" | "valuation" | "sale" | "logistics" | "expense" | "status" | null;
@@ -53,18 +55,21 @@ export default function ManagementApp({
   section = "dashboard",
   selectedAssetId,
   canCreateAsset = false,
+  canRefreshTracking = false,
 }: {
   initialData: DashboardData;
   section?: Section;
   selectedAssetId?: string;
   canCreateAsset?: boolean;
+  canRefreshTracking?: boolean;
 }) {
-  const [data, setData] = useState(initialData);
+  const router = useRouter();
+  const [dataOverride, setData] = useState<DashboardData | null>(null);
+  const data = dataOverride ?? initialData;
   const [modal, setModal] = useState<ModalKind>(null);
   const [cameraId, setCameraId] = useState(selectedAssetId ?? initialData.assets[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
-  const refreshedTracking = useRef(false);
   const migrationReadOnly = data.migrationReadOnly;
   const selectedAsset = selectedAssetId ? data.assets.find((asset) => asset.id === selectedAssetId) : undefined;
 
@@ -73,15 +78,6 @@ export default function ManagementApp({
     if (!response.ok) throw new Error("数据刷新失败");
     setData(await response.json() as DashboardData);
   };
-
-  useEffect(() => {
-    if (migrationReadOnly || refreshedTracking.current || !["dashboard", "logistics"].includes(section)) return;
-    refreshedTracking.current = true;
-    fetch("/api/logistics/refresh-due", { method: "POST" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((result) => result?.outcomes?.some((item: { ok: boolean }) => item.ok) ? reload() : null)
-      .catch(() => undefined);
-  }, [migrationReadOnly, section]);
 
   useEffect(() => {
     if (!modal) return;
@@ -128,8 +124,8 @@ export default function ManagementApp({
   };
 
   const refreshTracking = async (order: LogisticsView) => {
-    if (migrationReadOnly) {
-      setNotice(MIGRATION_PROTECTION_MESSAGE);
+    if (!canRefreshTracking) {
+      setNotice("当前账户没有物流写入权限");
       return;
     }
     setBusy(true);
@@ -137,11 +133,11 @@ export default function ManagementApp({
     try {
       const response = await fetch("/api/logistics/refresh", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ logisticsOrderId: order.id }),
+        body: JSON.stringify({ shipmentId: order.id }),
       });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error || "查询失败");
-      await reload();
+      router.refresh();
       setNotice("日本邮政轨迹已同步");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "物流查询失败");
@@ -154,7 +150,7 @@ export default function ManagementApp({
     ? <AssetDetail asset={selectedAsset} data={data} open={open} />
     : section === "dashboard" ? <DashboardView data={data} open={open} />
       : section === "assets" ? <AssetsView data={data} canCreateAsset={canCreateAsset} />
-        : section === "logistics" ? <LogisticsViewPage data={data} open={open} refreshTracking={refreshTracking} busy={busy} />
+        : section === "logistics" ? <LogisticsViewPage data={data} open={open} refreshTracking={refreshTracking} busy={busy} canRefreshTracking={canRefreshTracking} />
           : section === "repairs" ? <RepairsView data={data} open={open} />
             : section === "sales" ? <SalesView data={data} open={open} />
               : section === "buy-decision" ? <BuyDecisionView data={data} />
@@ -394,7 +390,7 @@ function InvestmentCard({ asset, open, readOnly }: { asset: AssetView; open: (ki
   );
 }
 
-function LogisticsViewPage({ data, open, refreshTracking, busy }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>) => void; refreshTracking: (order: LogisticsView) => void; busy: boolean }) {
+function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracking }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>) => void; refreshTracking: (order: LogisticsView) => void; busy: boolean; canRefreshTracking: boolean }) {
   const actual = data.logistics.filter((order) => !order.isEstimated && (order.carrier.includes("EMS") || order.carrier.includes("日本邮政")));
   const avgDays = actual.filter((order) => order.totalTransitDays !== null).reduce((sum, order) => sum + (order.totalTransitDays ?? 0), 0) / Math.max(1, actual.filter((order) => order.totalTransitDays !== null).length);
   const totalWeight = actual.reduce((sum, order) => sum + order.chargeableWeightG, 0);
@@ -443,16 +439,16 @@ function LogisticsViewPage({ data, open, refreshTracking, busy }: { data: Dashbo
             </div>
             <footer>
               <span>成本 {cny(order.costPerKg)}/kg · {cny(order.costPerCamera)}/台</span>
-              <span>{order.lastCheckedAt ? `上次查询 ${date(order.lastCheckedAt)}` : "尚未自动查询"}{order.trackingError ? ` · ${order.trackingError}` : ""}</span>
+              <span>{order.lastCheckedAt ? `上次查询 ${date(order.lastCheckedAt)}` : "尚未查询"}{order.trackingError ? ` · ${order.trackingError}` : ""}</span>
               <div>
                 {order.trackingNumber && (order.carrier.includes("EMS") || order.carrier.includes("日本邮政")) && <a href={`https://trackings.post.japanpost.jp/services/srv/search/direct?reqCodeNo1=${order.trackingNumber}&searchKind=S004&locale=en`} target="_blank" rel="noreferrer">官方查询 ↗</a>}
-                {!data.migrationReadOnly && order.trackingNumber && (order.carrier.includes("EMS") || order.carrier.includes("日本邮政")) && <button type="button" disabled={busy} onClick={() => refreshTracking(order)}>立即同步</button>}
+                {canRefreshTracking && isJapanPostTrackingNumber(order.trackingNumber) && (order.carrier.includes("EMS") || order.carrier.includes("日本邮政")) && <button type="button" disabled={busy} onClick={() => refreshTracking(order)}>立即同步</button>}
               </div>
             </footer>
           </article>
         ))}
       </div>
-      <p className="source-note">{data.migrationReadOnly ? "迁移保护期间，自动物流更新与状态变化已暂停。" : "追踪数据来自日本邮政公开查询页面，系统每天 09:00（上海时间）刷新未完成包裹；进入物流页也会检查超过 24 小时未更新的记录。"}</p>
+      <p className="source-note">{data.dataSource === "supabase" ? "追踪数据仅在 owner / editor 明确点击“立即同步”后从日本邮政公开查询页面写入；页面加载不会自动查询。" : data.migrationReadOnly ? "迁移保护期间，自动物流更新与状态变化已暂停。" : "追踪数据来自日本邮政公开查询页面。"}</p>
     </>
   );
 }

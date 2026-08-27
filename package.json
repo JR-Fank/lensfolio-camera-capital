@@ -9,10 +9,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "npm run lint && npm run typecheck && npm run test:evidence && npm run test:auth && npm run test:valuation",
+    "test": "npm run lint && npm run typecheck && npm run test:evidence && npm run test:auth && npm run test:valuation && npm run test:tracking",
     "test:auth": "node --test tests/lensfolio-auth.test.mjs",
     "test:evidence": "node --test tests/evidence-import.test.mjs",
     "test:valuation": "node --test tests/valuation-semantics.test.mjs",
+    "test:tracking": "node --test tests/manual-tracking-refresh.test.mjs",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "db:generate": "drizzle-kit generate"

@@ -1,16 +1,48 @@
-import { getD1 } from "../../../../db";
-import { refreshLogisticsTracking } from "../../../../db/tracking";
-import { jsonError, readObject, text, writeAccessError } from "../../_shared";
+import { createClient } from "../../../../lib/supabase/server";
+import {
+  refreshSupabaseShipmentTracking,
+  TrackingSyncError,
+} from "../../../../lib/supabase/tracking";
+
+export const runtime = "nodejs";
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
 
 export async function POST(request: Request) {
-  const accessError = writeAccessError(request);
-  if (accessError) return accessError;
-
   try {
-    const body = await readObject(request);
-    const result = await refreshLogisticsTracking(getD1(), text(body.logisticsOrderId, "物流订单"));
-    return Response.json({ ok: true, latest: result.latest });
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) {
+      return Response.json({ error: "请先登录 Lensfolio。" }, { status: 401 });
+    }
+
+    const body = await request.json() as { shipmentId?: unknown };
+    const shipmentId = String(body.shipmentId ?? "").trim();
+    if (!isUuid(shipmentId)) {
+      return Response.json({ error: "物流批次 UUID 格式不正确。" }, { status: 400 });
+    }
+
+    const result = await refreshSupabaseShipmentTracking({
+      supabase,
+      userId: data.user.id,
+      shipmentId,
+    });
+
+    return Response.json(
+      {
+        ok: true,
+        runId: result.run_id,
+        eventsSeen: result.events_seen,
+        eventsInserted: result.events_inserted,
+        latest: result.latest,
+      },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
-    return jsonError(error, 502);
+    const status = error instanceof TrackingSyncError ? error.status : 500;
+    const message = error instanceof Error ? error.message : "物流同步失败";
+    return Response.json({ error: message }, { status });
   }
 }

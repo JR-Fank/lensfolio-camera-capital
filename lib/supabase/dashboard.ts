@@ -178,11 +178,18 @@ type TrackingEventRow = {
   raw_status: string | null;
 };
 
+type TrackingSyncRunRow = {
+  shipment_id: string | null;
+  finished_at: string | null;
+  status: string;
+  error_message: string | null;
+};
+
 export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> => {
   const dashboard = await getSupabaseDashboardData();
   const { supabase, portfolioId } = await sessionPortfolio();
 
-  const [shipmentsResult, itemsResult, eventsResult, assetsResult] = await Promise.all([
+  const [shipmentsResult, itemsResult, eventsResult, syncRunsResult, assetsResult] = await Promise.all([
     supabase
       .from("shipments")
       .select("id,legacy_id,carrier,tracking_number,status,shipped_at,delivered_at,actual_paid_cny,budget_cny,origin,destination,bare_weight_g,chargeable_weight_g,legacy_status,updated_at")
@@ -198,6 +205,12 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       .eq("portfolio_id", portfolioId)
       .order("occurred_at", { ascending: true }),
     supabase
+      .from("tracking_sync_runs")
+      .select("shipment_id,finished_at,status,error_message")
+      .eq("portfolio_id", portfolioId)
+      .not("finished_at", "is", null)
+      .order("finished_at", { ascending: false }),
+    supabase
       .from("assets")
       .select("id,brand,model")
       .eq("portfolio_id", portfolioId),
@@ -206,6 +219,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
   const shipments = rows<ShipmentRow>("shipments", shipmentsResult);
   const items = rows<ShipmentItemRow>("shipment items", itemsResult);
   const events = rows<TrackingEventRow>("tracking events", eventsResult);
+  const syncRuns = rows<TrackingSyncRunRow>("tracking sync runs", syncRunsResult);
   const assets = rows<{ id: string; brand: string; model: string }>("shipment assets", assetsResult);
 
   const assetNameById = new Map(
@@ -226,9 +240,17 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
     eventsByShipment.set(event.shipment_id, list);
   }
 
+  const latestRunByShipment = new Map<string, TrackingSyncRunRow>();
+  for (const run of syncRuns) {
+    if (run.shipment_id && !latestRunByShipment.has(run.shipment_id)) {
+      latestRunByShipment.set(run.shipment_id, run);
+    }
+  }
+
   const logistics: LogisticsView[] = shipments.map((shipment) => {
     const shipmentItems = itemsByShipment.get(shipment.id) ?? [];
     const shipmentEvents = eventsByShipment.get(shipment.id) ?? [];
+    const latestRun = latestRunByShipment.get(shipment.id);
     const actualPaid = money(shipment.actual_paid_cny);
     const budget = money(shipment.budget_cny);
     const shippingCny = actualPaid > 0 ? actualPaid : budget;
@@ -248,7 +270,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       logisticsOrderId: shipment.id,
       occurredAt: event.occurred_at,
       rawStatus: event.raw_status ?? event.status,
-      statusLabel: event.raw_status ?? event.status,
+      statusLabel: event.status,
       details: event.description,
       office: event.location,
       country: null,
@@ -302,9 +324,13 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       shippingCny,
       allocationMethod: allocationMethod(shipmentItems[0]?.allocation_method),
       isEstimated,
-      lastCheckedAt: null,
-      trackingSource: shipment.tracking_number ? "Supabase tracking events" : null,
-      trackingError: null,
+      lastCheckedAt: latestRun?.finished_at ?? null,
+      trackingSource: latestRun || shipmentEvents.length
+        ? "Japan Post public tracking"
+        : null,
+      trackingError: latestRun?.status === "failed"
+        ? latestRun.error_message
+        : null,
       anomaly: null,
       notes: shipment.legacy_status,
       itemCount: shipmentItems.length,
