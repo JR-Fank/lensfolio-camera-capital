@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, ReactNode, useEffect, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import type { AssetView, DashboardData, LogisticsView } from "../db/queries";
+import { getAssetLocalizedName, getLocalizedNameFromFormalName } from "../lib/asset-display-names";
 import { MIGRATION_PROTECTION_MESSAGE } from "../lib/migration-protection";
 import { isJapanPostTrackingNumber } from "../lib/tracking/japan-post";
 
@@ -70,6 +71,8 @@ export default function ManagementApp({
   const [cameraId, setCameraId] = useState(selectedAssetId ?? initialData.assets[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mobileCloseButtonRef = useRef<HTMLButtonElement>(null);
   const migrationReadOnly = data.migrationReadOnly;
   const selectedAsset = selectedAssetId ? data.assets.find((asset) => asset.id === selectedAssetId) : undefined;
 
@@ -85,6 +88,19 @@ export default function ManagementApp({
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
   }, [modal]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const close = (event: KeyboardEvent) => event.key === "Escape" && setMobileMenuOpen(false);
+    document.body.style.overflow = "hidden";
+    mobileCloseButtonRef.current?.focus();
+    window.addEventListener("keydown", close);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", close);
+    };
+  }, [mobileMenuOpen]);
 
   const open = (kind: Exclude<ModalKind, null>, id?: string) => {
     if (migrationReadOnly) return;
@@ -149,15 +165,16 @@ export default function ManagementApp({
   const page = selectedAsset
     ? <AssetDetail asset={selectedAsset} data={data} open={open} />
     : section === "dashboard" ? <DashboardView data={data} open={open} />
-      : section === "assets" ? <AssetsView data={data} canCreateAsset={canCreateAsset} />
+      : section === "assets" ? <AssetsView data={data} canCreateAsset={canCreateAsset} open={open} />
         : section === "logistics" ? <LogisticsViewPage data={data} open={open} refreshTracking={refreshTracking} busy={busy} canRefreshTracking={canRefreshTracking} />
           : section === "repairs" ? <RepairsView data={data} open={open} />
             : section === "sales" ? <SalesView data={data} open={open} />
               : section === "buy-decision" ? <BuyDecisionView data={data} />
                 : <AnalysisView data={data} />;
 
+  const selectedAssetLocalizedName = selectedAsset ? getAssetLocalizedName(selectedAsset.brand, selectedAsset.model) : null;
   const copy = selectedAsset
-    ? { eyebrow: "ASSET FILE", title: fullName(selectedAsset), description: "单机真实成本、市场区间、维修与退出回报。" }
+    ? { eyebrow: "ASSET FILE", title: fullName(selectedAsset), description: `${selectedAssetLocalizedName ? `${selectedAssetLocalizedName} · ` : ""}单机真实成本、市场区间、维修与退出回报。` }
     : sectionCopy[section];
 
   return (
@@ -168,7 +185,7 @@ export default function ManagementApp({
         </Link>
         <nav aria-label="系统导航">
           {nav.map((item) => (
-            <Link className={section === item.id && !selectedAsset ? "active" : ""} href={item.href} key={item.id}>
+            <Link aria-current={section === item.id ? "page" : undefined} className={section === item.id ? "active" : ""} href={item.href} key={item.id}>
               <small>{item.index}</small><span>{item.label}</span><i>↗</i>
             </Link>
           ))}
@@ -182,10 +199,21 @@ export default function ManagementApp({
       <main className="workspace">
         <header className="mobile-bar">
           <Link href="/" className="mini-mark">LF</Link><span>{copy.title}</span>
-          {section === "assets" && !selectedAsset && canCreateAsset
-            ? <Link className="mobile-add" href="/assets/new" aria-label="新增相机">＋</Link>
-            : <span aria-hidden="true" />}
+          <div className="mobile-header-actions">
+            {section === "assets" && !selectedAsset && canCreateAsset && <Link className="mobile-add" href="/assets/new" aria-label="新增相机">＋</Link>}
+            <button className="mobile-menu-trigger" type="button" aria-label="打开主导航" aria-expanded={mobileMenuOpen} aria-controls="mobile-main-navigation" onClick={() => setMobileMenuOpen(true)}><i /><i /><i /></button>
+          </div>
         </header>
+        {mobileMenuOpen && <div className="mobile-navigation-layer">
+          <button className="mobile-nav-backdrop" type="button" aria-label="关闭主导航" onClick={() => setMobileMenuOpen(false)} />
+          <aside className="mobile-nav-drawer" id="mobile-main-navigation" role="dialog" aria-modal="true" aria-label="Lensfolio 主导航">
+            <header><div><small>PRIVATE PORTFOLIO</small><strong>Lensfolio</strong></div><button ref={mobileCloseButtonRef} className="mobile-nav-close" type="button" aria-label="关闭主导航" onClick={() => setMobileMenuOpen(false)}>×</button></header>
+            <nav aria-label="移动端系统导航">
+              {nav.map((item) => <Link aria-current={section === item.id ? "page" : undefined} className={section === item.id ? "active" : ""} href={item.href} key={item.id} onClick={() => setMobileMenuOpen(false)}><small>{item.index}</small><span>{item.label}</span>{section === item.id && <i>当前</i>}</Link>)}
+            </nav>
+            <footer><i /><span>SUPABASE · RLS PROTECTED</span></footer>
+          </aside>
+        </div>}
         <header className="page-head">
           <div>
             <p className="eyebrow">{copy.eyebrow}</p>
@@ -333,7 +361,7 @@ function ChartHead({ label, title, note }: { label: string; title: string; note:
   return <header className="chart-head"><div><p>{label}</p><h3>{title}</h3></div><span>{note}</span></header>;
 }
 
-function AssetsView({ data, canCreateAsset }: { data: DashboardData; canCreateAsset: boolean }) {
+function AssetsView({ data, canCreateAsset, open }: { data: DashboardData; canCreateAsset: boolean; open: (kind: Exclude<ModalKind, null>, id?: string) => void }) {
   return (
     <>
       <div className="toolbar-row">
@@ -352,10 +380,11 @@ function InvestmentCard({ asset, open, readOnly }: { asset: AssetView; open: (ki
   const hasValuation = asset.marketMedianCny !== null;
   const pendingShipping = asset.pendingShippingCny ?? 0;
   const confidence = Math.max(0, Math.min(5, Math.round(asset.valuationConfidence * 5)));
+  const localizedName = getAssetLocalizedName(asset.brand, asset.model);
   return (
     <article className="investment-card">
       <header>
-        <div><p>{asset.brand.toUpperCase()}</p><h3>{asset.model}</h3>{asset.variant && <small>{asset.variant}</small>}</div>
+        <div><p>{asset.brand.toUpperCase()}</p><h3>{asset.model}</h3>{localizedName && <small className="asset-localized-name">{localizedName}</small>}{asset.variant && <small>{asset.variant}</small>}</div>
         <div className="asset-status"><span className={`status-dot ${asset.repairStatus === "待维修" ? "warn" : ""}`} />{asset.repairStatus}</div>
       </header>
       <div className="card-split">
@@ -406,10 +435,12 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
         <Metric label="物流总预算" value={cny(data.summary.logisticsCost)} note={`待确认 ${cny(data.summary.estimatedLogisticsCost)}`} compact />
       </section>
       <div className="shipment-stack">
-        {data.logistics.map((order) => (
+        {data.logistics.map((order) => {
+          const localizedAssetNames = order.allocations.map((allocation) => getLocalizedNameFromFormalName(allocation.cameraName)).filter((name): name is string => Boolean(name));
+          return (
           <article className="shipment-card" key={order.id}>
             <header>
-              <div><span className="batch-code">{order.batchCode}</span><h2>{order.carrier}</h2><p>{order.cameraNames}</p></div>
+              <div><span className="batch-code">{order.batchCode}</span><h2>{order.carrier}</h2><p>{order.cameraNames}</p>{localizedAssetNames.length > 0 && <small className="shipment-localized-names">{localizedAssetNames.join(" · ")}</small>}</div>
               <div className={`shipment-state ${order.anomaly ? "has-alert" : ""}`}><i /><strong>{order.status}</strong><small>{order.anomaly || order.latestEvent || "尚无轨迹"}</small></div>
             </header>
             <div className="shipment-facts">
@@ -435,7 +466,10 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
             </div>
             <div className="allocation-ledger">
               <header><span>费用分摊</span><b>{order.allocationMethod}</b></header>
-              {order.allocations.map((allocation) => <div key={allocation.cameraId}><span>{allocation.cameraName}</span><small>{number(allocation.weightG)} g</small><b>{cny(allocation.allocatedShippingCny)}</b></div>)}
+              {order.allocations.map((allocation) => {
+                const allocationLocalizedName = getLocalizedNameFromFormalName(allocation.cameraName);
+                return <div key={allocation.cameraId}><span className="allocation-asset-name">{allocation.cameraName}{allocationLocalizedName && <em>{allocationLocalizedName}</em>}</span><small>{number(allocation.weightG)} g</small><b>{cny(allocation.allocatedShippingCny)}</b></div>;
+              })}
             </div>
             <footer>
               <span>成本 {cny(order.costPerKg)}/kg · {cny(order.costPerCamera)}/台</span>
@@ -446,7 +480,8 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
               </div>
             </footer>
           </article>
-        ))}
+          );
+        })}
       </div>
       <p className="source-note">{data.dataSource === "supabase" ? "追踪数据仅在 owner / editor 明确点击“立即同步”后从日本邮政公开查询页面写入；页面加载不会自动查询。" : data.migrationReadOnly ? "迁移保护期间，自动物流更新与状态变化已暂停。" : "追踪数据来自日本邮政公开查询页面。"}</p>
     </>
