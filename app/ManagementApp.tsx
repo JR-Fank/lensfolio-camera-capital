@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { AssetView, DashboardData, LogisticsView } from "../db/queries";
 import { getAssetLocalizedName, getLocalizedNameFromFormalName } from "../lib/asset-display-names";
 import { MIGRATION_PROTECTION_MESSAGE } from "../lib/migration-protection";
@@ -38,6 +39,8 @@ const cny = (value: number, digits = 0) => new Intl.NumberFormat("zh-CN", {
 const nullableCny = (value: number | null, missing = "—") => value === null ? missing : cny(value);
 const jpy = (value: number) => `¥${new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 0 }).format(value)}`;
 const number = (value: number, digits = 1) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: digits }).format(value);
+const grams = (value: number | null) => value !== null && value > 0 ? `${number(value)} g` : "—";
+const kilograms = (value: number | null) => value !== null && value > 0 ? `${number(value / 1000, 3)} kg` : "—";
 const signed = (value: number | null) => value === null ? "—" : `${value >= 0 ? "+" : "−"}${cny(Math.abs(value))}`;
 const pct = (value: number | null) => value === null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 const performanceClass = (value: number | null) => value === null ? "" : value >= 0 ? "gain" : "loss";
@@ -73,6 +76,7 @@ export default function ManagementApp({
   const [notice, setNotice] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const mobileCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const migrationReadOnly = data.migrationReadOnly;
   const selectedAsset = selectedAssetId ? data.assets.find((asset) => asset.id === selectedAssetId) : undefined;
 
@@ -91,16 +95,28 @@ export default function ManagementApp({
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    const close = (event: KeyboardEvent) => event.key === "Escape" && setMobileMenuOpen(false);
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMobileMenuOpen(false);
+      mobileMenuButtonRef.current?.focus();
+    };
     document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
     mobileCloseButtonRef.current?.focus();
     window.addEventListener("keydown", close);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
       window.removeEventListener("keydown", close);
     };
   }, [mobileMenuOpen]);
+
+  const closeMobileMenu = (restoreFocus = false) => {
+    setMobileMenuOpen(false);
+    if (restoreFocus) window.requestAnimationFrame(() => mobileMenuButtonRef.current?.focus());
+  };
 
   const open = (kind: Exclude<ModalKind, null>, id?: string) => {
     if (migrationReadOnly) return;
@@ -177,8 +193,25 @@ export default function ManagementApp({
     ? { eyebrow: "ASSET FILE", title: fullName(selectedAsset), description: `${selectedAssetLocalizedName ? `${selectedAssetLocalizedName} · ` : ""}单机真实成本、市场区间、维修与退出回报。` }
     : sectionCopy[section];
 
+  const mobileNavigation = mobileMenuOpen && typeof document !== "undefined"
+    ? createPortal(
+      <div className="mobile-navigation-layer">
+        <button className="mobile-nav-backdrop" type="button" aria-label="关闭主导航" onClick={() => closeMobileMenu(true)} />
+        <aside className="mobile-nav-drawer" id="mobile-main-navigation" role="dialog" aria-modal="true" aria-label="Lensfolio 主导航">
+          <header><div><small>PRIVATE PORTFOLIO</small><strong>Lensfolio</strong></div><button ref={mobileCloseButtonRef} className="mobile-nav-close" type="button" aria-label="关闭主导航" onClick={() => closeMobileMenu(true)}>×</button></header>
+          <nav aria-label="移动端系统导航">
+            {nav.map((item) => <Link aria-current={section === item.id ? "page" : undefined} className={section === item.id ? "active" : ""} href={item.href} key={item.id} onClick={() => closeMobileMenu()}><small>{item.index}</small><span>{item.label}</span>{section === item.id && <i>当前</i>}</Link>)}
+          </nav>
+          <footer><i /><span>SUPABASE · RLS PROTECTED</span></footer>
+        </aside>
+      </div>,
+      document.body,
+    )
+    : null;
+
   return (
-    <div className="app-shell">
+    <>
+      <div className="app-shell">
       <aside className="side-rail">
         <Link className="system-mark" href="/" aria-label="Lensfolio 首页">
           <span>LF</span><b>LENSFOLIO</b><small>CAMERA INVESTMENT SYSTEM</small>
@@ -201,19 +234,11 @@ export default function ManagementApp({
           <Link href="/" className="mini-mark">LF</Link><span>{copy.title}</span>
           <div className="mobile-header-actions">
             {section === "assets" && !selectedAsset && canCreateAsset && <Link className="mobile-add" href="/assets/new" aria-label="新增相机">＋</Link>}
-            <button className="mobile-menu-trigger" type="button" aria-label="打开主导航" aria-expanded={mobileMenuOpen} aria-controls="mobile-main-navigation" onClick={() => setMobileMenuOpen(true)}><i /><i /><i /></button>
+            <button ref={mobileMenuButtonRef} className="mobile-menu-trigger" type="button" aria-label="打开主导航" aria-expanded={mobileMenuOpen} aria-controls="mobile-main-navigation" onClick={() => setMobileMenuOpen(true)}>
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+            </button>
           </div>
         </header>
-        {mobileMenuOpen && <div className="mobile-navigation-layer">
-          <button className="mobile-nav-backdrop" type="button" aria-label="关闭主导航" onClick={() => setMobileMenuOpen(false)} />
-          <aside className="mobile-nav-drawer" id="mobile-main-navigation" role="dialog" aria-modal="true" aria-label="Lensfolio 主导航">
-            <header><div><small>PRIVATE PORTFOLIO</small><strong>Lensfolio</strong></div><button ref={mobileCloseButtonRef} className="mobile-nav-close" type="button" aria-label="关闭主导航" onClick={() => setMobileMenuOpen(false)}>×</button></header>
-            <nav aria-label="移动端系统导航">
-              {nav.map((item) => <Link aria-current={section === item.id ? "page" : undefined} className={section === item.id ? "active" : ""} href={item.href} key={item.id} onClick={() => setMobileMenuOpen(false)}><small>{item.index}</small><span>{item.label}</span>{section === item.id && <i>当前</i>}</Link>)}
-            </nav>
-            <footer><i /><span>SUPABASE · RLS PROTECTED</span></footer>
-          </aside>
-        </div>}
         <header className="page-head">
           <div>
             <p className="eyebrow">{copy.eyebrow}</p>
@@ -249,7 +274,9 @@ export default function ManagementApp({
           </div>
         </div>
       )}
-    </div>
+      </div>
+      {mobileNavigation}
+    </>
   );
 }
 
@@ -421,8 +448,10 @@ function InvestmentCard({ asset, open, readOnly }: { asset: AssetView; open: (ki
 
 function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracking }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>) => void; refreshTracking: (order: LogisticsView) => void; busy: boolean; canRefreshTracking: boolean }) {
   const actual = data.logistics.filter((order) => !order.isEstimated && (order.carrier.includes("EMS") || order.carrier.includes("日本邮政")));
+  const actualWithWeight = actual.filter((order) => order.chargeableWeightG !== null && order.chargeableWeightG > 0);
   const avgDays = actual.filter((order) => order.totalTransitDays !== null).reduce((sum, order) => sum + (order.totalTransitDays ?? 0), 0) / Math.max(1, actual.filter((order) => order.totalTransitDays !== null).length);
-  const totalWeight = actual.reduce((sum, order) => sum + order.chargeableWeightG, 0);
+  const totalWeight = actualWithWeight.reduce((sum, order) => sum + (order.chargeableWeightG ?? 0), 0);
+  const weightedCost = actualWithWeight.reduce((sum, order) => sum + order.shippingCny, 0);
   const totalCost = actual.reduce((sum, order) => sum + order.shippingCny, 0);
   const totalUnits = actual.reduce((sum, order) => sum + order.itemCount, 0);
   return (
@@ -430,7 +459,7 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
       <div className="toolbar-row"><div className="position-summary"><span>追踪中 <b>{data.logistics.filter((order) => order.trackingNumber && order.status !== "已签收").length}</b></span><span>总批次 <b>{data.logistics.length}</b></span></div>{!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("logistics")}>＋ 新增物流单</button>}</div>
       <section className="operating-metrics">
         <Metric label="EMS 平均速度" value={avgDays ? `${number(avgDays, 1)} 天` : "—"} note="国际发货至最新节点" compact />
-        <Metric label="EMS 平均成本 / kg" value={totalWeight ? cny(totalCost / (totalWeight / 1000)) : "—"} note="按实际计费重量" compact />
+        <Metric label="EMS 平均成本 / kg" value={totalWeight ? cny(weightedCost / (totalWeight / 1000)) : "—"} note="按实际计费重量" compact />
         <Metric label="EMS 平均成本 / 台" value={totalUnits ? cny(totalCost / totalUnits) : "—"} note="按已支付批次" compact />
         <Metric label="物流总预算" value={cny(data.summary.logisticsCost)} note={`待确认 ${cny(data.summary.estimatedLogisticsCost)}`} compact />
       </section>
@@ -448,7 +477,7 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
               <span><small>路线</small><b>{order.origin} → {order.destination}</b></span>
               <span><small>运输天数</small><b>{order.totalTransitDays === null ? "—" : `${number(order.totalTransitDays, 1)} 天`}</b></span>
               <span><small>预计到达</small><b>{date(order.estimatedArrivalAt)}</b></span>
-              <span><small>计费重量</small><b>{number(order.chargeableWeightG / 1000, 3)} kg</b></span>
+              <span><small>计费重量</small><b>{kilograms(order.chargeableWeightG)}</b></span>
               <span><small>批次运费</small><b>{cny(order.shippingCny)}{order.isEstimated ? " 预算" : ""}</b></span>
             </div>
             <div className="shipment-body">
@@ -468,11 +497,11 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
               <header><span>费用分摊</span><b>{order.allocationMethod}</b></header>
               {order.allocations.map((allocation) => {
                 const allocationLocalizedName = getLocalizedNameFromFormalName(allocation.cameraName);
-                return <div key={allocation.cameraId}><span className="allocation-asset-name">{allocation.cameraName}{allocationLocalizedName && <em>{allocationLocalizedName}</em>}</span><small>{number(allocation.weightG)} g</small><b>{cny(allocation.allocatedShippingCny)}</b></div>;
+                return <div key={allocation.cameraId}><span className="allocation-asset-name">{allocation.cameraName}{allocationLocalizedName && <em>{allocationLocalizedName}</em>}</span><small>{grams(allocation.weightG)}</small><b>{cny(allocation.allocatedShippingCny)}</b></div>;
               })}
             </div>
             <footer>
-              <span>成本 {cny(order.costPerKg)}/kg · {cny(order.costPerCamera)}/台</span>
+              <span>{order.costPerKg === null ? "成本 — / kg" : `成本 ${cny(order.costPerKg)}/kg`} · {cny(order.costPerCamera)}/台</span>
               <span>{order.lastCheckedAt ? `上次查询 ${date(order.lastCheckedAt)}` : "尚未查询"}{order.trackingError ? ` · ${order.trackingError}` : ""}</span>
               <div>
                 {order.trackingNumber && (order.carrier.includes("EMS") || order.carrier.includes("日本邮政")) && <a href={`https://trackings.post.japanpost.jp/services/srv/search/direct?reqCodeNo1=${order.trackingNumber}&searchKind=S004&locale=en`} target="_blank" rel="noreferrer">官方查询 ↗</a>}

@@ -255,15 +255,17 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
     const budget = money(shipment.budget_cny);
     const shippingCny = actualPaid > 0 ? actualPaid : budget;
     const isEstimated = actualPaid <= 0 && budget > 0;
-    const chargeableWeightG = whole(shipment.chargeable_weight_g);
+    const bareWeightG = nullableWhole(shipment.bare_weight_g);
+    const chargeableWeightG = nullableWhole(shipment.chargeable_weight_g);
 
     const allocations = shipmentItems.map((item) => ({
       logisticsOrderId: shipment.id,
       cameraId: item.asset_id,
       cameraName: assetNameById.get(item.asset_id) ?? "Unknown asset",
-      weightG: whole(item.weight_snapshot_g),
+      weightG: nullableWhole(item.weight_snapshot_g),
       allocatedShippingCny: money(item.allocated_shipping_cny),
     }));
+    const cameraNames = allocations.map((item) => item.cameraName).join(" · ");
 
     const mappedEvents = shipmentEvents.map((event) => ({
       id: event.id,
@@ -301,7 +303,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
 
     return {
       id: shipment.id,
-      batchCode: shipment.legacy_id ?? shipment.id.slice(0, 8),
+      batchCode: shipmentDisplayName(shipment, cameraNames),
       carrier: shipment.carrier ?? "未记录承运商",
       trackingNumber: shipment.tracking_number,
       origin: shipment.origin ?? "未记录",
@@ -318,7 +320,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       internationalShippedAt: dispatchEvent?.occurred_at ?? shipment.shipped_at,
       hongKongArrivedAt: inwardArrivalEvent?.occurred_at ?? null,
       deliveredAt: shipment.delivered_at,
-      bareWeightG: whole(shipment.bare_weight_g),
+      bareWeightG,
       chargeableWeightG,
       shippingJpy: 0,
       shippingCny,
@@ -334,10 +336,12 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       anomaly: null,
       notes: shipment.legacy_status,
       itemCount: shipmentItems.length,
-      cameraNames: allocations.map((item) => item.cameraName).join(" · "),
+      cameraNames,
       totalTransitDays,
       costPerKg:
-        chargeableWeightG > 0 ? shippingCny / (chargeableWeightG / 1000) : 0,
+        chargeableWeightG !== null && chargeableWeightG > 0
+          ? shippingCny / (chargeableWeightG / 1000)
+          : null,
       costPerCamera:
         shipmentItems.length > 0 ? shippingCny / shipmentItems.length : 0,
       allocations,
@@ -369,6 +373,16 @@ function allocationMethod(value: string | undefined) {
     manual: "手工分摊",
     legacy_equal_allocation: "历史平均分摊",
   } as Record<string, string>)[value ?? ""] ?? value ?? "未记录";
+}
+
+function shipmentDisplayName(
+  shipment: Pick<ShipmentRow, "id" | "legacy_id">,
+  cameraNames: string,
+) {
+  if (shipment.legacy_id?.startsWith("evidence:logistics:")) {
+    return cameraNames ? `${cameraNames} · 国际物流` : "国际物流";
+  }
+  return shipment.legacy_id ?? `物流 ${shipment.id.slice(0, 8)}`;
 }
 
 export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise<DashboardData | null> => {
@@ -544,6 +558,11 @@ function money(value: number | string | null | undefined) {
   return Number.isFinite(result) ? result : 0;
 }
 function whole(value: number | string | null | undefined) { return Math.trunc(money(value)); }
+function nullableWhole(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return null;
+  const result = Number(value);
+  return Number.isFinite(result) ? Math.trunc(result) : null;
+}
 function sum(values: Iterable<number>) { let total = 0; for (const value of values) total += value; return total; }
 function holdingDays(acquiredAt: string | null) {
   if (!acquiredAt) return 0;

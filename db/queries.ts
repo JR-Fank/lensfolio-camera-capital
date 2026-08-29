@@ -64,7 +64,7 @@ export type LogisticsAllocationView = {
   logisticsOrderId: string;
   cameraId: string;
   cameraName: string;
-  weightG: number;
+  weightG: number | null;
   allocatedShippingCny: number;
 };
 
@@ -83,8 +83,8 @@ export type LogisticsView = {
   internationalShippedAt: string | null;
   hongKongArrivedAt: string | null;
   deliveredAt: string | null;
-  bareWeightG: number;
-  chargeableWeightG: number;
+  bareWeightG: number | null;
+  chargeableWeightG: number | null;
   shippingJpy: number;
   shippingCny: number;
   allocationMethod: string;
@@ -97,7 +97,7 @@ export type LogisticsView = {
   itemCount: number;
   cameraNames: string;
   totalTransitDays: number | null;
-  costPerKg: number;
+  costPerKg: number | null;
   costPerCamera: number;
   allocations: LogisticsAllocationView[];
   events: LogisticsEventView[];
