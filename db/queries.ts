@@ -127,9 +127,9 @@ export type SaleView = {
   status: string;
   listedAt: string | null;
   soldAt: string | null;
-  askingPriceCny: number;
-  marketPriceCny: number;
-  actualPriceCny: number;
+  askingPriceCny: number | null;
+  marketPriceCny: number | null;
+  actualPriceCny: number | null;
   platformFeeCny: number;
   shippingCny: number;
   finalProfit: number;

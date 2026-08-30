@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import type { AssetView, DashboardData, LogisticsView, ValuationHistoryView } from "../../db/queries";
+import type { AssetView, DashboardData, LogisticsView, SaleView, ValuationHistoryView } from "../../db/queries";
 import { projectAssetValuation, projectPortfolioValuation } from "../valuation-semantics";
 import { createClient } from "./server";
 
@@ -38,6 +38,12 @@ type ValuationRow = {
   confidence: number | string | null; methodology_version: string; valued_at: string;
 };
 type MarketSourceRow = { id: string; name: string };
+type SaleRow = {
+  id: string; asset_id: string; status: string; platform: string | null;
+  listing_price_cny: number | string | null; sold_price_cny: number | string | null;
+  platform_fees_cny: number | string; outbound_shipping_cny: number | string;
+  listed_at: string | null; sold_at: string | null;
+};
 type PurchaseItemRow = {
   asset_id: string; purchase_order_id: string; original_price_jpy: number | string; allocation_method: string;
 };
@@ -61,6 +67,7 @@ const financialSelect = "portfolio_id,asset_id,acquisition_cost_cny,logistics_co
 const valuationSelect = "id,asset_id,market_source_id,low,median,high,sample_count,confidence,methodology_version,valued_at";
 const purchaseItemSelect = "asset_id,purchase_order_id,original_price_jpy,allocation_method";
 const purchaseOrderSelect = "id,vendor,platform,order_reference,original_currency,ordered_at,domestic_shipping_jpy,exchange_rate_jpy_to_cny";
+const saleSelect = "id,asset_id,status,platform,listing_price_cny,sold_price_cny,platform_fees_cny,outbound_shipping_cny,listed_at,sold_at";
 
 async function sessionPortfolio() {
   const supabase = await createClient();
@@ -81,7 +88,7 @@ async function sessionPortfolio() {
 
 export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> => {
   const { supabase, portfolioId } = await sessionPortfolio();
-  const [metricsResult, assetsResult, financialsResult, pendingResult, valuationsResult, sourcesResult, purchaseItemsResult, purchaseOrdersResult, statusEventsResult] = await Promise.all([
+  const [metricsResult, assetsResult, financialsResult, pendingResult, valuationsResult, sourcesResult, purchaseItemsResult, purchaseOrdersResult, statusEventsResult, salesResult] = await Promise.all([
     supabase.from("portfolio_metrics").select("asset_count,total_carrying_cost_cny,current_valuation_cny,unrealized_profit_cny,realized_profit_cny,investment_roi,logistics_cost_cny,repair_cost_cny,other_cost_cny,total_asset_count,total_posted_carrying_cost_cny,valued_asset_count,valued_asset_carrying_cost_cny,valued_unrealized_profit_cny,valued_assets_roi,valuation_coverage_complete,portfolio_roi").eq("portfolio_id", portfolioId).single(),
     supabase.from("assets").select(assetSelect).eq("portfolio_id", portfolioId).order("acquired_at", { ascending: true }),
     supabase.from("asset_financials").select(financialSelect).eq("portfolio_id", portfolioId),
@@ -91,6 +98,7 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
     supabase.from("purchase_items").select(purchaseItemSelect).eq("portfolio_id", portfolioId),
     supabase.from("purchase_orders").select(purchaseOrderSelect).eq("portfolio_id", portfolioId),
     supabase.from("asset_status_events").select("asset_id,note,occurred_at").eq("portfolio_id", portfolioId).not("note", "is", null).order("occurred_at", { ascending: false }),
+    supabase.from("sales").select(saleSelect).eq("portfolio_id", portfolioId).order("sold_at", { ascending: false, nullsFirst: false }),
   ]);
   const metrics = row<PortfolioMetricsRow>("portfolio metrics", metricsResult);
   const assetRows = rows<AssetRow>("assets", assetsResult);
@@ -105,6 +113,7 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
     statusEvents: rows<StatusEventRow>("asset status notes", statusEventsResult),
   });
   const assets = assetRows.map((asset) => buildAsset(asset, context));
+  const sales = buildSales(rows<SaleRow>("sales", salesResult), assetRows, context.financialByAsset);
   const pendingShipping = sum(context.pendingByAsset.values());
   const postedCarryingCost = money(metrics.total_carrying_cost_cny);
   const valuationMetrics = projectPortfolioValuation(metrics);
@@ -133,7 +142,7 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
     assets,
     logistics: [],
     repairs: [],
-    sales: [],
+    sales,
     expenses: [],
     valuationHistory: buildValuationHistory(valuationRows, assetRows, context.sourceById),
     refreshedAt: new Date().toISOString(),
@@ -388,12 +397,13 @@ function shipmentDisplayName(
 export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise<DashboardData | null> => {
   if (!isUuid(assetId)) return null;
   const { supabase, portfolioId } = await sessionPortfolio();
-  const [assetResult, financialResult, pendingResult, valuationsResult, statusEventsResult] = await Promise.all([
+  const [assetResult, financialResult, pendingResult, valuationsResult, statusEventsResult, salesResult] = await Promise.all([
     supabase.from("assets").select(assetSelect).eq("portfolio_id", portfolioId).eq("id", assetId).maybeSingle(),
     supabase.from("asset_financials").select(financialSelect).eq("portfolio_id", portfolioId).eq("asset_id", assetId).maybeSingle(),
     supabase.from("cost_entries").select("asset_id,amount_cny").eq("portfolio_id", portfolioId).eq("asset_id", assetId).eq("entry_status", "pending").eq("cost_type", "international_shipping"),
     supabase.from("valuation_snapshots").select(valuationSelect).eq("portfolio_id", portfolioId).eq("asset_id", assetId).order("valued_at", { ascending: false }),
     supabase.from("asset_status_events").select("asset_id,note,occurred_at").eq("portfolio_id", portfolioId).eq("asset_id", assetId).not("note", "is", null).order("occurred_at", { ascending: false }),
+    supabase.from("sales").select(saleSelect).eq("portfolio_id", portfolioId).eq("asset_id", assetId).order("sold_at", { ascending: false, nullsFirst: false }),
   ]);
   const asset = optionalRow<AssetRow>("asset", assetResult);
   if (!asset) return null;
@@ -422,6 +432,7 @@ export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise
     statusEvents: rows<StatusEventRow>("asset status notes", statusEventsResult),
   });
   const assetView = buildAsset(asset, context);
+  const sales = buildSales(rows<SaleRow>("asset sales", salesResult), [asset], context.financialByAsset);
   const pendingShipping = assetView.pendingShippingCny ?? 0;
 
   return {
@@ -446,7 +457,7 @@ export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise
       realizedProfit: money(financial.realized_profit_cny),
     },
     assets: [assetView],
-    logistics: [], repairs: [], sales: [], expenses: [],
+    logistics: [], repairs: [], sales, expenses: [],
     valuationHistory: buildValuationHistory(valuationRows, [asset], context.sourceById),
     refreshedAt: new Date().toISOString(),
   };
@@ -540,6 +551,29 @@ function buildValuationHistory(valuations: ValuationRow[], assets: AssetRow[], s
   });
 }
 
+function buildSales(sales: SaleRow[], assets: AssetRow[], financialByAsset: Map<string, FinancialRow>): SaleView[] {
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+  return sales.map((sale) => {
+    const asset = assetById.get(sale.asset_id);
+    const financial = financialByAsset.get(sale.asset_id);
+    return {
+      id: sale.id,
+      cameraId: sale.asset_id,
+      cameraName: asset ? `${asset.brand} ${asset.model}` : "Asset",
+      platform: sale.platform ?? "未记录",
+      status: saleStatus(sale.status),
+      listedAt: sale.listed_at,
+      soldAt: sale.sold_at,
+      askingPriceCny: nullableMoney(sale.listing_price_cny),
+      marketPriceCny: null,
+      actualPriceCny: nullableMoney(sale.sold_price_cny),
+      platformFeeCny: money(sale.platform_fees_cny),
+      shippingCny: money(sale.outbound_shipping_cny),
+      finalProfit: money(financial?.realized_profit_cny),
+    };
+  });
+}
+
 function rows<T>(label: string, result: QueryResult): T[] {
   if (result.error) throw new Error(`${label} query failed: ${result.error.message}`);
   return (result.data ?? []) as T[];
@@ -556,6 +590,11 @@ function optionalRow<T>(label: string, result: QueryResult): T | null {
 function money(value: number | string | null | undefined) {
   const result = Number(value ?? 0);
   return Number.isFinite(result) ? result : 0;
+}
+function nullableMoney(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return null;
+  const result = Number(value);
+  return Number.isFinite(result) ? result : null;
 }
 function whole(value: number | string | null | undefined) { return Math.trunc(money(value)); }
 function nullableWhole(value: number | string | null | undefined) {
@@ -578,6 +617,9 @@ function operationalStatus(value: string) {
 }
 function repairStatus(value: string) {
   return ({ unknown: "未知", not_inspected: "未检测", normal: "正常", needs_repair: "待维修", in_repair: "维修中", repaired: "已维修" } as Record<string, string>)[value] ?? value;
+}
+function saleStatus(value: string) {
+  return ({ listed: "已挂牌", sold: "已出售", cancelled: "已取消" } as Record<string, string>)[value] ?? value;
 }
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
