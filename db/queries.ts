@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import type { LogisticsBenchmark } from "../lib/logistics-benchmark";
 import { isMigrationReadOnly } from "../lib/migration-protection";
+import { canonicalizeTrackingEvents, deriveTransitDuration } from "../lib/tracking/transit-duration";
 import { getD1 } from ".";
 
 export type AssetView = {
@@ -55,6 +56,9 @@ export type LogisticsEventView = {
   occurredAt: string;
   rawStatus: string;
   statusLabel: string;
+  externalEventId?: string | null;
+  legacyId?: string | null;
+  recordedAt?: string | null;
   details: string | null;
   office: string | null;
   country: string | null;
@@ -100,6 +104,8 @@ export type LogisticsView = {
   itemCount: number;
   cameraNames: string;
   totalTransitDays: number | null;
+  transitDurationComplete: boolean;
+  pickupWaitDays: number | null;
   costPerKg: number | null;
   costPerCamera: number;
   allocations: LogisticsAllocationView[];
@@ -266,10 +272,7 @@ export async function getDashboardData(): Promise<DashboardData> {
         lo.tracking_error AS trackingError, lo.notes,
         COUNT(li.id) AS itemCount,
         COALESCE(GROUP_CONCAT(c.brand || ' ' || c.model, ' · '), '') AS cameraNames,
-        CASE WHEN lo.international_shipped_at IS NOT NULL THEN ROUND(
-          julianday(COALESCE(lo.delivered_at, (SELECT MAX(le.occurred_at) FROM logistics_events le WHERE le.logistics_order_id = lo.id), lo.hong_kong_arrived_at))
-          - julianday(lo.international_shipped_at), 2
-        ) ELSE NULL END AS totalTransitDays,
+        NULL AS totalTransitDays,
         CASE
           WHEN lo.tracking_error IS NOT NULL THEN lo.tracking_error
           WHEN lo.tracking_number IS NOT NULL AND lo.status NOT IN ('已签收', '已领取')
@@ -285,7 +288,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       LEFT JOIN cameras c ON c.id = li.camera_id
       GROUP BY lo.id
       ORDER BY lo.batch_code DESC
-    `).all<Omit<LogisticsView, "events" | "allocations" | "costPerKg" | "costPerCamera">>(),
+    `).all<Omit<LogisticsView, "events" | "allocations" | "costPerKg" | "costPerCamera" | "transitDurationComplete" | "pickupWaitDays">>(),
     db.prepare(`
       SELECT li.logistics_order_id AS logisticsOrderId, li.camera_id AS cameraId,
         c.brand || ' ' || c.model AS cameraName, li.weight_g AS weightG,
@@ -407,20 +410,26 @@ export async function getDashboardData(): Promise<DashboardData> {
     allocationsByOrder.set(row.logisticsOrderId, allocations);
   }
 
-  const logistics = logisticsResult.results.map((row) => ({
-    ...row,
-    bareWeightG: Number(row.bareWeightG),
-    chargeableWeightG: Number(row.chargeableWeightG),
-    shippingJpy: Number(row.shippingJpy),
-    shippingCny: Number(row.shippingCny),
-    isEstimated: Boolean(row.isEstimated),
-    itemCount: Number(row.itemCount),
-    totalTransitDays: row.totalTransitDays === null ? null : Number(row.totalTransitDays),
-    costPerKg: Number(row.chargeableWeightG) ? Number(row.shippingCny) / (Number(row.chargeableWeightG) / 1000) : 0,
-    costPerCamera: Number(row.itemCount) ? Number(row.shippingCny) / Number(row.itemCount) : 0,
-    allocations: allocationsByOrder.get(row.id) ?? [],
-    events: eventsByOrder.get(row.id) ?? [],
-  })) satisfies LogisticsView[];
+  const logistics = logisticsResult.results.map((row) => {
+    const events = canonicalizeTrackingEvents(eventsByOrder.get(row.id) ?? []);
+    const duration = deriveTransitDuration(events);
+    return {
+      ...row,
+      bareWeightG: Number(row.bareWeightG),
+      chargeableWeightG: Number(row.chargeableWeightG),
+      shippingJpy: Number(row.shippingJpy),
+      shippingCny: Number(row.shippingCny),
+      isEstimated: Boolean(row.isEstimated),
+      itemCount: Number(row.itemCount),
+      totalTransitDays: duration.transitDays,
+      transitDurationComplete: duration.isComplete,
+      pickupWaitDays: duration.pickupWaitDays,
+      costPerKg: Number(row.chargeableWeightG) ? Number(row.shippingCny) / (Number(row.chargeableWeightG) / 1000) : 0,
+      costPerCamera: Number(row.itemCount) ? Number(row.shippingCny) / Number(row.itemCount) : 0,
+      allocations: allocationsByOrder.get(row.id) ?? [],
+      events,
+    };
+  }) satisfies LogisticsView[];
 
   const activeAssets = assets.filter((asset) => asset.lifecycleStatus !== "已出售");
   const projectedCostBasis = activeAssets.reduce((sum, asset) => sum + asset.trueCost, 0);

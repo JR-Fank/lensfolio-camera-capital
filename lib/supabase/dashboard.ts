@@ -2,9 +2,10 @@ import "server-only";
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import type { AssetView, DashboardData, LogisticsView, SaleView, ValuationHistoryView } from "../../db/queries";
+import type { AssetView, DashboardData, LogisticsEventView, LogisticsView, SaleView, ValuationHistoryView } from "../../db/queries";
 import { calculateHoldingDays } from "../holding-days";
 import { buildLogisticsBenchmarks, type LogisticsCostSample } from "../logistics-benchmark";
+import { canonicalizeTrackingEvents, deriveTransitDuration } from "../tracking/transit-duration";
 import { projectAssetValuation, projectPortfolioValuation } from "../valuation-semantics";
 import { createClient } from "./server";
 
@@ -204,6 +205,8 @@ type ShipmentCostRow = {
 type TrackingEventRow = {
   id: string;
   shipment_id: string;
+  external_event_id: string | null;
+  legacy_id: string | null;
   status: string;
   description: string | null;
   location: string | null;
@@ -234,8 +237,6 @@ type LogisticsReferenceRow = {
   service: string;
   chargeable_weight_g: number;
   net_cost_cny: number | string;
-  carrier_posted_at: string | null;
-  carrier_delivered_at: string | null;
 };
 
 export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> => {
@@ -261,7 +262,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       .eq("entry_status", "posted"),
     supabase
       .from("tracking_events")
-      .select("id,shipment_id,status,description,location,occurred_at,recorded_at,raw_status")
+      .select("id,shipment_id,external_event_id,legacy_id,status,description,location,occurred_at,recorded_at,raw_status")
       .eq("portfolio_id", portfolioId)
       .order("occurred_at", { ascending: true }),
     supabase
@@ -280,7 +281,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       .eq("portfolio_id", portfolioId),
     supabase
       .from("logistics_reference_samples")
-      .select("carrier,service,chargeable_weight_g,net_cost_cny,carrier_posted_at,carrier_delivered_at")
+      .select("carrier,service,chargeable_weight_g,net_cost_cny")
       .eq("portfolio_id", portfolioId)
       .eq("reference_scope", "external_private"),
   ]);
@@ -345,20 +346,11 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       || Math.abs(postedCost - actualPaid) > 0.01
     ) return [];
 
-    const shipmentEvents = eventsByShipment.get(shipment.id) ?? [];
-    const dispatched = shipmentEvents.find(
-      (event) => event.raw_status === "Dispatch from outward office of exchange",
+    const shipmentEvents = canonicalizeTrackingEvents(
+      (eventsByShipment.get(shipment.id) ?? []).map((event) => trackingEventView(shipment.id, event)),
     );
-    const delivered = [...shipmentEvents].reverse().find(
-      (event) => event.raw_status === "Final delivery",
-    );
-    const completedTransitDays = shipment.status === "delivered" && dispatched && delivered
-      ? Math.max(
-          0,
-          (new Date(delivered.occurred_at).getTime() - new Date(dispatched.occurred_at).getTime())
-            / 86_400_000,
-        )
-      : null;
+    const duration = deriveTransitDuration(shipmentEvents);
+    const completedTransitDays = duration.isComplete ? duration.transitDays : null;
 
     return [{
       carrierService,
@@ -373,18 +365,14 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
     scope: "external_private" as const,
     chargeableWeightG: sample.chargeable_weight_g,
     actualCostCny: money(sample.net_cost_cny),
-    completedTransitDays: sample.carrier_posted_at && sample.carrier_delivered_at
-      ? Math.max(
-          0,
-          (new Date(sample.carrier_delivered_at).getTime() - new Date(sample.carrier_posted_at).getTime())
-            / 86_400_000,
-        )
-      : null,
+    completedTransitDays: null,
   })));
 
   const logisticsRecords = shipments.map((shipment) => {
     const shipmentItems = itemsByShipment.get(shipment.id) ?? [];
-    const shipmentEvents = eventsByShipment.get(shipment.id) ?? [];
+    const shipmentEvents = canonicalizeTrackingEvents(
+      (eventsByShipment.get(shipment.id) ?? []).map((event) => trackingEventView(shipment.id, event)),
+    );
     const latestRun = latestRunByShipment.get(shipment.id);
     const actualPaid = money(shipment.actual_paid_cny);
     const budget = money(shipment.budget_cny);
@@ -412,21 +400,9 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       .filter((value): value is string => Boolean(value))
       .sort((a, b) => b.localeCompare(a))[0] ?? shipment.created_at;
 
-    const mappedEvents = shipmentEvents.map((event) => ({
-      id: event.id,
-      logisticsOrderId: shipment.id,
-      occurredAt: event.occurred_at,
-      rawStatus: event.raw_status ?? event.status,
-      statusLabel: event.status,
-      details: event.description,
-      office: event.location,
-      country: null,
-      postalCode: null,
-    }));
-
     const findTrackingEvent = (...labels: string[]) =>
       shipmentEvents.find((event) => {
-        const value = `${event.raw_status ?? ""} ${event.status}`.toLowerCase();
+        const value = `${event.rawStatus} ${event.statusLabel}`.toLowerCase();
         return labels.some((label) => value.includes(label.toLowerCase()));
       });
 
@@ -434,17 +410,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
     const dispatchEvent = findTrackingEvent("Dispatch from outward office of exchange");
     const inwardArrivalEvent = findTrackingEvent("Arrival at inward office of exchange");
     const latest = shipmentEvents.at(-1);
-
-    const transitStart = dispatchEvent?.occurred_at ?? shipment.shipped_at;
-    const transitEnd = shipment.delivered_at ?? latest?.occurred_at ?? null;
-    const totalTransitDays =
-      transitStart && transitEnd
-        ? Math.max(
-            0,
-            (new Date(transitEnd).getTime() - new Date(transitStart).getTime()) /
-              86_400_000
-          )
-        : null;
+    const duration = deriveTransitDuration(shipmentEvents);
 
     const view: LogisticsView = {
       id: shipment.id,
@@ -455,14 +421,14 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       destination: shipment.destination ?? "未记录",
       status: shipmentPresentationStatus(shipment.status, latest),
       latestEvent:
-        latest?.status ??
+        latest?.statusLabel ??
         shipment.legacy_status ??
         null,
       estimatedArrivalAt: null,
-      sellerShippedAt: postingEvent?.occurred_at ?? null,
+      sellerShippedAt: postingEvent?.occurredAt ?? null,
       warehouseInAt: null,
-      internationalShippedAt: dispatchEvent?.occurred_at ?? shipment.shipped_at,
-      hongKongArrivedAt: inwardArrivalEvent?.occurred_at ?? null,
+      internationalShippedAt: dispatchEvent?.occurredAt ?? shipment.shipped_at,
+      hongKongArrivedAt: inwardArrivalEvent?.occurredAt ?? null,
       deliveredAt: shipment.delivered_at,
       bareWeightG,
       chargeableWeightG,
@@ -481,7 +447,9 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       notes: shipment.legacy_status,
       itemCount: shipmentItems.length,
       cameraNames,
-      totalTransitDays,
+      totalTransitDays: duration.transitDays,
+      transitDurationComplete: duration.isComplete,
+      pickupWaitDays: duration.pickupWaitDays,
       costPerKg:
         chargeableWeightG !== null && chargeableWeightG > 0
           ? shippingCny / (chargeableWeightG / 1000)
@@ -489,7 +457,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       costPerCamera:
         shipmentItems.length > 0 ? shippingCny / shipmentItems.length : 0,
       allocations,
-      events: mappedEvents,
+      events: shipmentEvents,
     };
     return {
       view,
@@ -525,14 +493,31 @@ function shipmentStatus(value: string) {
   } as Record<string, string>)[value] ?? value;
 }
 
-function shipmentPresentationStatus(value: string, latest: TrackingEventRow | undefined) {
+function shipmentPresentationStatus(value: string, latest: LogisticsEventView | undefined) {
   if (
     value === "in_transit"
-    && latest?.raw_status === "Item arrival at collection point for pick-up"
+    && latest?.rawStatus === "Item arrival at collection point for pick-up"
   ) {
     return "香港领取点待取";
   }
   return shipmentStatus(value);
+}
+
+function trackingEventView(shipmentId: string, event: TrackingEventRow): LogisticsEventView {
+  return {
+    id: event.id,
+    logisticsOrderId: shipmentId,
+    occurredAt: event.occurred_at,
+    rawStatus: event.raw_status ?? event.status,
+    statusLabel: event.status,
+    externalEventId: event.external_event_id,
+    legacyId: event.legacy_id,
+    recordedAt: event.recorded_at,
+    details: event.description,
+    office: event.location,
+    country: null,
+    postalCode: null,
+  };
 }
 
 function allocationMethod(value: string | undefined) {

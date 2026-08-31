@@ -563,7 +563,7 @@ function LogisticsShipmentCard({ order, refreshTracking, busy, canRefreshTrackin
             <div className="shipment-facts">
               <span><small>国际单号</small><b>{order.trackingNumber || "待录入"}</b></span>
               <span><small>路线</small><b>{order.origin} → {order.destination}</b></span>
-              <span><small>运输天数</small><b>{order.totalTransitDays === null ? "—" : `${number(order.totalTransitDays, 1)} 天`}</b></span>
+              <span><small>运输天数</small><b>{order.totalTransitDays === null ? "—" : order.transitDurationComplete ? `${number(order.totalTransitDays, 1)} 天` : `运输中约 ${number(order.totalTransitDays, 1)} 天`}</b>{order.pickupWaitDays !== null && <em className="pickup-wait">待领取约 {number(order.pickupWaitDays, 1)} 天</em>}</span>
               <span><small>预计到达</small><b>{date(order.estimatedArrivalAt)}</b></span>
               <span><small>计费重量</small><b>{kilograms(order.chargeableWeightG)}</b></span>
               <span><small>批次运费</small><b>{cny(order.shippingCny)}{order.isEstimated ? " 预算" : ""}</b></span>
