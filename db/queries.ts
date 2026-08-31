@@ -130,9 +130,14 @@ export type SaleView = {
   askingPriceCny: number | null;
   marketPriceCny: number | null;
   actualPriceCny: number | null;
+  grossProceedsCny: number | null;
+  netProceedsCny: number | null;
   platformFeeCny: number;
   shippingCny: number;
+  carryingCostCny: number;
   finalProfit: number;
+  realizedRoi: number | null;
+  holdingDays: number;
 };
 
 export type ExpenseView = {
@@ -168,6 +173,10 @@ export type DashboardData = {
     totalInvested: number;
     projectedCostBasis: number;
     assetCount: number;
+    totalAssetCount: number;
+    heldAssetCount: number;
+    soldAssetCount: number;
+    heldCarryingCost: number;
     currentMarketValue: number | null;
     unrealizedProfit: number | null;
     roi: number | null;
@@ -181,6 +190,8 @@ export type DashboardData = {
     repairCost: number;
     otherCost: number;
     realizedProfit: number;
+    realizedRoi: number | null;
+    totalProfit: number | null;
   };
   assets: AssetView[];
   logistics: LogisticsView[];
@@ -425,13 +436,18 @@ export async function getDashboardData(): Promise<DashboardData> {
   const valuationCoverageComplete = valuedAssets.length === activeAssets.length;
   const soldCost = assets.filter((asset) => asset.lifecycleStatus === "已出售").reduce((sum, asset) => sum + asset.trueCost, 0);
   const realizedProfit = Number(investmentRow?.realizedNetProceeds ?? 0) - soldCost;
+  const totalProfit = unrealizedProfit === null ? null : unrealizedProfit + realizedProfit;
 
   return {
     migrationReadOnly: isMigrationReadOnly(env),
     summary: {
       totalInvested: Number(investmentRow?.totalInvested ?? 0),
       projectedCostBasis,
-      assetCount: activeAssets.length,
+      assetCount: assets.length,
+      totalAssetCount: assets.length,
+      heldAssetCount: activeAssets.length,
+      soldAssetCount: assets.length - activeAssets.length,
+      heldCarryingCost: projectedCostBasis,
       currentMarketValue,
       unrealizedProfit,
       roi: valuedAssetsRoi,
@@ -445,6 +461,8 @@ export async function getDashboardData(): Promise<DashboardData> {
       repairCost: Number(investmentRow?.repairCost ?? 0),
       otherCost: Number(investmentRow?.otherCost ?? 0),
       realizedProfit,
+      realizedRoi: soldCost ? realizedProfit / soldCost * 100 : null,
+      totalProfit,
     },
     assets,
     logistics,
@@ -460,9 +478,16 @@ export async function getDashboardData(): Promise<DashboardData> {
       askingPriceCny: Number(row.askingPriceCny),
       marketPriceCny: Number(row.marketPriceCny),
       actualPriceCny: Number(row.actualPriceCny),
+      grossProceedsCny: Number(row.actualPriceCny),
+      netProceedsCny: Number(row.actualPriceCny) - Number(row.platformFeeCny) - Number(row.shippingCny),
       platformFeeCny: Number(row.platformFeeCny),
       shippingCny: Number(row.shippingCny),
+      carryingCostCny: Number(row.actualPriceCny) - Number(row.platformFeeCny) - Number(row.shippingCny) - Number(row.finalProfit),
       finalProfit: Number(row.finalProfit),
+      realizedRoi: Number(row.actualPriceCny) - Number(row.platformFeeCny) - Number(row.shippingCny) - Number(row.finalProfit)
+        ? Number(row.finalProfit) / (Number(row.actualPriceCny) - Number(row.platformFeeCny) - Number(row.shippingCny) - Number(row.finalProfit)) * 100
+        : null,
+      holdingDays: 0,
     })),
     expenses: expenseResult.results.map((row) => ({ ...row, amountCny: Number(row.amountCny) })),
     valuationHistory: valuationResult.results.map((row) => ({

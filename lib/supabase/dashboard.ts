@@ -22,8 +22,10 @@ type FinancialRow = {
 };
 type PortfolioMetricsRow = {
   asset_count: number | string; total_carrying_cost_cny: number | string;
+  active_asset_count: number | string; sold_asset_count: number | string;
   current_valuation_cny: number | string | null; unrealized_profit_cny: number | string | null;
   realized_profit_cny: number | string | null; investment_roi: number | string | null;
+  unrealized_roi: number | string | null; realized_roi: number | string | null;
   logistics_cost_cny: number | string; repair_cost_cny: number | string; other_cost_cny: number | string;
   total_asset_count: number | string; total_posted_carrying_cost_cny: number | string;
   valued_asset_count: number | string; valued_asset_carrying_cost_cny: number | string | null;
@@ -41,6 +43,7 @@ type MarketSourceRow = { id: string; name: string };
 type SaleRow = {
   id: string; asset_id: string; status: string; platform: string | null;
   listing_price_cny: number | string | null; sold_price_cny: number | string | null;
+  net_proceeds_cny: number | string | null;
   platform_fees_cny: number | string; outbound_shipping_cny: number | string;
   listed_at: string | null; sold_at: string | null;
 };
@@ -67,7 +70,7 @@ const financialSelect = "portfolio_id,asset_id,acquisition_cost_cny,logistics_co
 const valuationSelect = "id,asset_id,market_source_id,low,median,high,sample_count,confidence,methodology_version,valued_at";
 const purchaseItemSelect = "asset_id,purchase_order_id,original_price_jpy,allocation_method";
 const purchaseOrderSelect = "id,vendor,platform,order_reference,original_currency,ordered_at,domestic_shipping_jpy,exchange_rate_jpy_to_cny";
-const saleSelect = "id,asset_id,status,platform,listing_price_cny,sold_price_cny,platform_fees_cny,outbound_shipping_cny,listed_at,sold_at";
+const saleSelect = "id,asset_id,status,platform,listing_price_cny,sold_price_cny,net_proceeds_cny,platform_fees_cny,outbound_shipping_cny,listed_at,sold_at";
 
 async function sessionPortfolio() {
   const supabase = await createClient();
@@ -89,7 +92,7 @@ async function sessionPortfolio() {
 export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> => {
   const { supabase, portfolioId } = await sessionPortfolio();
   const [metricsResult, assetsResult, financialsResult, pendingResult, valuationsResult, sourcesResult, purchaseItemsResult, purchaseOrdersResult, statusEventsResult, salesResult] = await Promise.all([
-    supabase.from("portfolio_metrics").select("asset_count,total_carrying_cost_cny,current_valuation_cny,unrealized_profit_cny,realized_profit_cny,investment_roi,logistics_cost_cny,repair_cost_cny,other_cost_cny,total_asset_count,total_posted_carrying_cost_cny,valued_asset_count,valued_asset_carrying_cost_cny,valued_unrealized_profit_cny,valued_assets_roi,valuation_coverage_complete,portfolio_roi").eq("portfolio_id", portfolioId).single(),
+    supabase.from("portfolio_metrics").select("asset_count,active_asset_count,sold_asset_count,total_carrying_cost_cny,current_valuation_cny,unrealized_profit_cny,realized_profit_cny,unrealized_roi,realized_roi,investment_roi,logistics_cost_cny,repair_cost_cny,other_cost_cny,total_asset_count,total_posted_carrying_cost_cny,valued_asset_count,valued_asset_carrying_cost_cny,valued_unrealized_profit_cny,valued_assets_roi,valuation_coverage_complete,portfolio_roi").eq("portfolio_id", portfolioId).single(),
     supabase.from("assets").select(assetSelect).eq("portfolio_id", portfolioId).order("acquired_at", { ascending: true }),
     supabase.from("asset_financials").select(financialSelect).eq("portfolio_id", portfolioId),
     supabase.from("cost_entries").select("asset_id,amount_cny").eq("portfolio_id", portfolioId).eq("entry_status", "pending").eq("cost_type", "international_shipping"),
@@ -117,6 +120,11 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
   const pendingShipping = sum(context.pendingByAsset.values());
   const postedCarryingCost = money(metrics.total_carrying_cost_cny);
   const valuationMetrics = projectPortfolioValuation(metrics);
+  const heldCarryingCost = sum(assets.filter((asset) => asset.lifecycleStatus !== "已出售").map((asset) => asset.trueCost));
+  const realizedProfit = money(metrics.realized_profit_cny);
+  const totalProfit = valuationMetrics.valuedUnrealizedProfit === null
+    ? null
+    : realizedProfit + valuationMetrics.valuedUnrealizedProfit;
 
   return {
     dataSource: "supabase",
@@ -125,6 +133,10 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
       totalInvested: postedCarryingCost,
       projectedCostBasis: postedCarryingCost + pendingShipping,
       assetCount: whole(metrics.asset_count),
+      totalAssetCount: whole(metrics.asset_count),
+      heldAssetCount: whole(metrics.active_asset_count),
+      soldAssetCount: whole(metrics.sold_asset_count),
+      heldCarryingCost,
       currentMarketValue: valuationMetrics.currentMarketValue,
       unrealizedProfit: valuationMetrics.valuedUnrealizedProfit,
       roi: valuationMetrics.valuedAssetsRoi,
@@ -137,7 +149,9 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
       estimatedLogisticsCost: pendingShipping,
       repairCost: money(metrics.repair_cost_cny),
       otherCost: money(metrics.other_cost_cny),
-      realizedProfit: money(metrics.realized_profit_cny),
+      realizedProfit,
+      realizedRoi: nullablePercentage(metrics.realized_roi),
+      totalProfit,
     },
     assets,
     logistics: [],
@@ -442,6 +456,10 @@ export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise
       totalInvested: assetView.trueCost,
       projectedCostBasis: assetView.trueCost + pendingShipping,
       assetCount: 1,
+      totalAssetCount: 1,
+      heldAssetCount: sales.some((sale) => sale.status === "已出售") ? 0 : 1,
+      soldAssetCount: sales.some((sale) => sale.status === "已出售") ? 1 : 0,
+      heldCarryingCost: sales.some((sale) => sale.status === "已出售") ? 0 : assetView.trueCost,
       currentMarketValue: assetView.marketMedianCny,
       unrealizedProfit: assetView.normalProfit,
       roi: assetView.roi,
@@ -455,6 +473,8 @@ export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise
       repairCost: assetView.repairCny,
       otherCost: assetView.otherCostCny,
       realizedProfit: money(financial.realized_profit_cny),
+      realizedRoi: nullablePercentage(financial.investment_roi),
+      totalProfit: money(financial.realized_profit_cny) || assetView.normalProfit,
     },
     assets: [assetView],
     logistics: [], repairs: [], sales, expenses: [],
@@ -567,9 +587,14 @@ function buildSales(sales: SaleRow[], assets: AssetRow[], financialByAsset: Map<
       askingPriceCny: nullableMoney(sale.listing_price_cny),
       marketPriceCny: null,
       actualPriceCny: nullableMoney(sale.sold_price_cny),
+      grossProceedsCny: nullableMoney(sale.sold_price_cny),
+      netProceedsCny: nullableMoney(sale.net_proceeds_cny),
       platformFeeCny: money(sale.platform_fees_cny),
       shippingCny: money(sale.outbound_shipping_cny),
+      carryingCostCny: money(financial?.total_carrying_cost_cny),
       finalProfit: money(financial?.realized_profit_cny),
+      realizedRoi: nullablePercentage(financial?.investment_roi),
+      holdingDays: daysBetween(asset?.acquired_at ?? null, sale.sold_at),
     };
   });
 }
@@ -596,6 +621,10 @@ function nullableMoney(value: number | string | null | undefined) {
   const result = Number(value);
   return Number.isFinite(result) ? result : null;
 }
+function nullablePercentage(value: number | string | null | undefined) {
+  const result = nullableMoney(value);
+  return result === null ? null : result * 100;
+}
 function whole(value: number | string | null | undefined) { return Math.trunc(money(value)); }
 function nullableWhole(value: number | string | null | undefined) {
   if (value === null || value === undefined) return null;
@@ -607,6 +636,12 @@ function holdingDays(acquiredAt: string | null) {
   if (!acquiredAt) return 0;
   const acquired = new Date(acquiredAt).getTime();
   return Number.isFinite(acquired) ? Math.max(0, Math.floor((Date.now() - acquired) / 86_400_000)) : 0;
+}
+function daysBetween(startAt: string | null, endAt: string | null) {
+  if (!startAt || !endAt) return 0;
+  const start = new Date(startAt).getTime();
+  const end = new Date(endAt).getTime();
+  return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, Math.floor((end - start) / 86_400_000)) : 0;
 }
 function averageHoldingDays(assets: AssetView[]) {
   const active = assets.filter((asset) => asset.lifecycleStatus !== "已出售");
