@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import type { LogisticsBenchmark } from "../lib/logistics-benchmark";
 import { isMigrationReadOnly } from "../lib/migration-protection";
 import { getD1 } from ".";
 
@@ -197,6 +198,7 @@ export type DashboardData = {
   };
   assets: AssetView[];
   logistics: LogisticsView[];
+  logisticsBenchmarks?: LogisticsBenchmark[];
   repairs: RepairView[];
   sales: SaleView[];
   expenses: ExpenseView[];

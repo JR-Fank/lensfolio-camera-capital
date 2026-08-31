@@ -6,6 +6,7 @@ import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AssetView, DashboardData, LogisticsView, SaleView } from "../db/queries";
 import { getAssetLocalizedName, getLocalizedNameFromFormalName } from "../lib/asset-display-names";
+import { allocateEstimateByWeight, estimateShipmentCost } from "../lib/logistics-benchmark";
 import { MIGRATION_PROTECTION_MESSAGE } from "../lib/migration-protection";
 import { isJapanPostTrackingNumber } from "../lib/tracking/japan-post";
 
@@ -466,22 +467,46 @@ function InvestmentCard({ asset, sale, open, readOnly }: { asset: AssetView; sal
 }
 
 function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracking }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>) => void; refreshTracking: (order: LogisticsView) => void; busy: boolean; canRefreshTracking: boolean }) {
-  const actual = data.logistics.filter((order) => !order.isEstimated && (order.carrier.includes("EMS") || order.carrier.includes("日本邮政")));
-  const actualWithWeight = actual.filter((order) => order.chargeableWeightG !== null && order.chargeableWeightG > 0);
-  const avgDays = actual.filter((order) => order.totalTransitDays !== null).reduce((sum, order) => sum + (order.totalTransitDays ?? 0), 0) / Math.max(1, actual.filter((order) => order.totalTransitDays !== null).length);
-  const totalWeight = actualWithWeight.reduce((sum, order) => sum + (order.chargeableWeightG ?? 0), 0);
-  const weightedCost = actualWithWeight.reduce((sum, order) => sum + order.shippingCny, 0);
-  const totalCost = actual.reduce((sum, order) => sum + order.shippingCny, 0);
-  const totalUnits = actual.reduce((sum, order) => sum + order.itemCount, 0);
+  const benchmarks = data.logisticsBenchmarks ?? [];
+  const [selectedCarrier, setSelectedCarrier] = useState(benchmarks[0]?.carrierService ?? "");
+  const [estimatedWeightG, setEstimatedWeightG] = useState(1000);
+  const [bundleWeightText, setBundleWeightText] = useState("");
+  const benchmark = benchmarks.find((item) => item.carrierService === selectedCarrier) ?? benchmarks[0];
+  const estimatedCost = benchmark ? estimateShipmentCost(benchmark, estimatedWeightG) : null;
+  const bundleWeights = bundleWeightText
+    .split(/[,，\s]+/)
+    .map(Number)
+    .filter((weight) => Number.isFinite(weight) && weight > 0);
+  const bundleAllocations = estimatedCost === null || bundleWeights.length < 2
+    ? []
+    : allocateEstimateByWeight(estimatedCost, bundleWeights);
   return (
     <>
       <div className="toolbar-row"><div className="position-summary"><span>追踪中 <b>{data.logistics.filter((order) => order.trackingNumber && order.status !== "已签收").length}</b></span><span>总批次 <b>{data.logistics.length}</b></span></div>{!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("logistics")}>＋ 新增物流单</button>}</div>
-      <section className="operating-metrics">
-        <Metric label="EMS 平均速度" value={avgDays ? `${number(avgDays, 1)} 天` : "—"} note="国际发货至最新节点" compact />
-        <Metric label="EMS 平均成本 / kg" value={totalWeight ? cny(weightedCost / (totalWeight / 1000)) : "—"} note="按实际计费重量" compact />
-        <Metric label="EMS 平均成本 / 台" value={totalUnits ? cny(totalCost / totalUnits) : "—"} note="按已支付批次" compact />
-        <Metric label="物流总预算" value={cny(data.summary.logisticsCost)} note={`待确认 ${cny(data.summary.estimatedLogisticsCost)}`} compact />
-      </section>
+      {benchmark ? <section className="logistics-benchmark" aria-label="物流经验参考">
+        <header>
+          <div><p className="eyebrow">COST BENCHMARK</p><h2>物流经验参考</h2><p>基于 Lensfolio 历史实际物流成本的经验估算，不是承运商官方运价。</p></div>
+          {benchmarks.length > 1 ? <label><span>承运服务</span><select value={benchmark.carrierService} onChange={(event) => setSelectedCarrier(event.target.value)}>{benchmarks.map((item) => <option key={item.carrierService}>{item.carrierService}</option>)}</select></label> : <b>{benchmark.carrierService}</b>}
+        </header>
+        <div className="benchmark-metrics">
+          <Metric label="已结算样本" value={`${benchmark.sampleCount} 批`} note={benchmark.confidenceLabel} compact />
+          <Metric label="平均实际运费" value={cny(benchmark.averageActualCostCny, 2)} note={`${cny(benchmark.minimumActualCostCny)}–${cny(benchmark.maximumActualCostCny)}`} compact />
+          <Metric label="合并重量成本" value={`${cny(benchmark.weightedCostPerKgCny, 2)} / kg`} note="按实际计费重量加权" compact />
+          <Metric label="典型运输时长" value={benchmark.typicalTransitDays === null ? "—" : `${number(benchmark.typicalTransitDays, 1)} 天`} note={`${benchmark.completedTransitSampleCount} 个完整终点样本`} compact />
+        </div>
+        <div className="shipment-estimator">
+          <div className="estimator-inputs">
+            <label><span>预计计费重量</span><div><input type="number" min="1" step="10" inputMode="decimal" value={estimatedWeightG} onChange={(event) => setEstimatedWeightG(Math.max(0, Number(event.target.value)))} /><b>g</b></div></label>
+            <label><span>多资产分摊重量（可选）</span><input type="text" inputMode="decimal" value={bundleWeightText} onChange={(event) => setBundleWeightText(event.target.value)} placeholder="例如 551, 603" /></label>
+          </div>
+          <div className="estimator-output">
+            <span>预计批次总运费</span><strong>{estimatedCost === null ? "—" : cny(estimatedCost, 2)}</strong>
+            <small>{estimatedCost === null || estimatedWeightG <= 0 ? "请输入有效计费重量" : `${cny(estimatedCost / (estimatedWeightG / 1000), 2)} / kg · ${benchmark.confidenceLabel} · ${benchmark.sampleCount} 个样本`}</small>
+          </div>
+          {bundleAllocations.length > 0 && <div className="estimate-allocation"><span>按资产重量占比分摊预计总额</span>{bundleAllocations.map((allocation, index) => <b key={`${allocation.weightG}-${index}`}>资产 {index + 1} · {allocation.weightG}g · {cny(allocation.amountCny, 2)}</b>)}</div>}
+        </div>
+        <footer>{benchmark.modelKind === "linear" ? `经验模型：${cny(benchmark.fixedComponentCny, 2)} 固定项 + ${cny(benchmark.variablePerKgCny, 2)}/kg` : `样本不足，使用历史中位数 ${cny(benchmark.medianActualCostCny, 2)}`}</footer>
+      </section> : <p className="panel-empty">尚无可用于估算的已结算物流样本。</p>}
       <div className="shipment-stack">
         {data.logistics.map((order) => {
           const localizedAssetNames = order.allocations.map((allocation) => getLocalizedNameFromFormalName(allocation.cameraName)).filter((name): name is string => Boolean(name));
@@ -521,7 +546,7 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
                   && allocation.budgetAllocatedShippingCny !== null
                   && allocation.budgetAllocatedShippingCny !== undefined
                   && Math.abs(allocation.actualAllocatedShippingCny - allocation.budgetAllocatedShippingCny) >= 0.01;
-                return <div key={allocation.cameraId}><span className="allocation-asset-name">{allocation.cameraName}{allocationLocalizedName && <em>{allocationLocalizedName}</em>}</span><small>{grams(allocation.weightG)}{showBudget ? ` · 历史预算 ${cny(allocation.budgetAllocatedShippingCny ?? 0)}` : ""}</small><b>{cny(allocation.allocatedShippingCny)}</b></div>;
+                return <div key={allocation.cameraId}><span className="allocation-asset-name">{allocation.cameraName}{allocationLocalizedName && <em>{allocationLocalizedName}</em>}</span><small>{grams(allocation.weightG)}</small><span className="allocation-amount"><b>{cny(allocation.allocatedShippingCny, 2)}</b>{showBudget && <small>预算 {cny(allocation.budgetAllocatedShippingCny ?? 0)}</small>}</span></div>;
               })}
             </div>
             <footer>

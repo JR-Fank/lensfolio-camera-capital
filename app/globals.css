@@ -228,6 +228,30 @@ button { color: inherit; }
 .primary-action:hover { color: var(--ink); background: var(--acid); }
 .operating-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; padding: 1px; background: var(--ink); }
 
+.logistics-benchmark { border: 1px solid var(--line-dark); background: var(--surface); }
+.logistics-benchmark > header { min-height: 104px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+.logistics-benchmark > header h2 { margin: 8px 0 5px; font-size: 22px; letter-spacing: -.04em; }
+.logistics-benchmark > header p:last-child { margin: 0; color: var(--muted); font-size: 8px; }
+.logistics-benchmark > header > b { padding: 8px 10px; color: var(--acid); background: var(--ink); font: 650 8px/1 var(--font-data); }
+.logistics-benchmark > header label { display: grid; gap: 7px; color: var(--muted); font-size: 7px; }
+.logistics-benchmark > header select { min-width: 180px; height: 38px; padding: 0 10px; border: 1px solid var(--line-dark); background: white; font-size: 9px; }
+.benchmark-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; padding: 1px; background: var(--ink); }
+.shipment-estimator { display: grid; grid-template-columns: 1.15fr .85fr; gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
+.estimator-inputs { display: grid; grid-template-columns: 1fr 1.4fr; gap: 14px; padding: 22px 24px; background: var(--surface); }
+.estimator-inputs label { min-width: 0; display: grid; gap: 8px; color: var(--muted); font-size: 7px; }
+.estimator-inputs label > div { display: grid; grid-template-columns: 1fr auto; align-items: center; border: 1px solid var(--line-dark); background: white; }
+.estimator-inputs input { min-width: 0; height: 42px; padding: 0 11px; border: 1px solid var(--line-dark); border-radius: 0; background: white; font: 550 10px/1 var(--font-data); }
+.estimator-inputs label > div input { border: 0; }
+.estimator-inputs label > div b { padding-right: 11px; color: var(--muted); font: 600 8px/1 var(--font-data); }
+.estimator-output { display: flex; flex-direction: column; justify-content: center; padding: 20px 24px; color: white; background: var(--ink); }
+.estimator-output > span { color: #9ca39d; font-size: 7px; }
+.estimator-output > strong { margin: 11px 0 8px; color: var(--acid); font: 650 28px/1 var(--font-data); letter-spacing: -.05em; }
+.estimator-output > small { color: #9ca39d; font: 7px/1.4 var(--font-data); }
+.estimate-allocation { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 13px 24px; background: var(--surface-2); }
+.estimate-allocation span { color: var(--muted); font-size: 7px; }
+.estimate-allocation b { font: 550 7px/1 var(--font-data); }
+.logistics-benchmark > footer { padding: 12px 24px; color: var(--muted); border-top: 1px solid var(--line); font: 7px/1.4 var(--font-data); }
+
 .shipment-stack { display: grid; gap: 14px; margin-top: 14px; }
 .shipment-card { border: 1px solid var(--line-dark); background: var(--surface); }
 .shipment-card > header { min-height: 108px; display: flex; align-items: center; justify-content: space-between; gap: 30px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
@@ -437,6 +461,8 @@ button { color: inherit; }
 .allocation-ledger > div span { font-size: 8px; }
 .allocation-ledger > div small { color: var(--muted); text-align: right; font: 7px/1 var(--font-data); }
 .allocation-ledger > div b { text-align: right; font: 650 8px/1 var(--font-data); }
+.allocation-amount { display: grid; gap: 5px; text-align: right; }
+.allocation-amount small { color: #9a9f9a !important; font-size: 6px !important; font-weight: 450; }
 .cell-note { display: block; margin-top: 5px; color: var(--muted); font-size: 7px; }
 
 .buy-decision-lab { min-height: 610px; display: grid; grid-template-columns: 1.25fr .75fr; margin-top: 18px; border: 1px solid var(--ink); background: var(--surface); }
@@ -636,6 +662,9 @@ button { color: inherit; }
   .position-summary { gap: 8px 0; }
   .position-summary span { padding: 0 12px; }
   .operating-metrics, .condition-board { grid-template-columns: 1fr 1fr; }
+  .logistics-benchmark > header { align-items: flex-start; flex-direction: column; }
+  .benchmark-metrics { grid-template-columns: 1fr 1fr; }
+  .shipment-estimator { grid-template-columns: 1fr; }
   .shipment-card > header { align-items: flex-start; flex-direction: column; }
   .shipment-state { text-align: left; }
   .shipment-facts { grid-template-columns: 1fr 1fr; }
@@ -691,6 +720,8 @@ button { color: inherit; }
   .mini-cost-bars > div { grid-template-columns: 1fr 34px 88px; }
   .allocation-ledger header, .allocation-ledger > div { grid-template-columns: 1fr auto; }
   .allocation-ledger > div small { display: none; }
+  .allocation-ledger .allocation-amount small { display: block; }
+  .benchmark-metrics, .estimator-inputs { grid-template-columns: 1fr; }
   .analysis-metrics { grid-template-columns: 1fr; }
   .decision-control-grid.three, .decision-control-grid.costs { grid-template-columns: 1fr; }
   .decision-workbench .decision-intro, .decision-fieldset { padding: 24px 18px; }

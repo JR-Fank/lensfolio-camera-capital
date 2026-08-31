@@ -4,6 +4,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import type { AssetView, DashboardData, LogisticsView, SaleView, ValuationHistoryView } from "../../db/queries";
 import { calculateHoldingDays } from "../holding-days";
+import { buildLogisticsBenchmarks, type LogisticsCostSample } from "../logistics-benchmark";
 import { projectAssetValuation, projectPortfolioValuation } from "../valuation-semantics";
 import { createClient } from "./server";
 
@@ -183,7 +184,7 @@ type ShipmentRow = {
   bare_weight_g: number | null;
   chargeable_weight_g: number | null;
   legacy_status: string | null;
-  updated_at: string;
+  created_at: string;
 };
 
 type ShipmentItemRow = {
@@ -218,16 +219,26 @@ type TrackingSyncRunRow = {
   error_message: string | null;
 };
 
+type LogisticsPurchaseItemRow = {
+  asset_id: string;
+  purchase_order_id: string;
+};
+
+type LogisticsPurchaseOrderRow = {
+  id: string;
+  ordered_at: string;
+};
+
 export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> => {
   const dashboard = await getSupabaseDashboardData();
   const { supabase, portfolioId } = await sessionPortfolio();
 
-  const [shipmentsResult, itemsResult, costsResult, eventsResult, syncRunsResult, assetsResult] = await Promise.all([
+  const [shipmentsResult, itemsResult, costsResult, eventsResult, syncRunsResult, purchaseItemsResult, purchaseOrdersResult] = await Promise.all([
     supabase
       .from("shipments")
-      .select("id,legacy_id,carrier,tracking_number,status,shipped_at,delivered_at,actual_paid_cny,budget_cny,origin,destination,bare_weight_g,chargeable_weight_g,legacy_status,updated_at")
+      .select("id,legacy_id,carrier,tracking_number,status,shipped_at,delivered_at,actual_paid_cny,budget_cny,origin,destination,bare_weight_g,chargeable_weight_g,legacy_status,created_at")
       .eq("portfolio_id", portfolioId)
-      .order("created_at", { ascending: true }),
+      .order("created_at", { ascending: false }),
     supabase
       .from("shipment_items")
       .select("id,shipment_id,asset_id,weight_snapshot_g,allocation_method,allocated_shipping_cny")
@@ -251,8 +262,12 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       .not("finished_at", "is", null)
       .order("finished_at", { ascending: false }),
     supabase
-      .from("assets")
-      .select("id,brand,model")
+      .from("purchase_items")
+      .select("asset_id,purchase_order_id")
+      .eq("portfolio_id", portfolioId),
+    supabase
+      .from("purchase_orders")
+      .select("id,ordered_at")
       .eq("portfolio_id", portfolioId),
   ]);
 
@@ -261,13 +276,21 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
   const costs = rows<ShipmentCostRow>("posted shipment costs", costsResult);
   const events = rows<TrackingEventRow>("tracking events", eventsResult);
   const syncRuns = rows<TrackingSyncRunRow>("tracking sync runs", syncRunsResult);
-  const assets = rows<{ id: string; brand: string; model: string }>("shipment assets", assetsResult);
+  const purchaseItems = rows<LogisticsPurchaseItemRow>("shipment purchase items", purchaseItemsResult);
+  const purchaseOrders = rows<LogisticsPurchaseOrderRow>("shipment purchase orders", purchaseOrdersResult);
 
   const assetNameById = new Map(
-    assets.map((asset) => [asset.id, `${asset.brand} ${asset.model}`])
+    dashboard.assets.map((asset) => [asset.id, `${asset.brand} ${asset.model}`])
   );
   const postedCostByItemId = new Map(
     costs.flatMap((cost) => cost.source_id ? [[cost.source_id, money(cost.amount_cny)] as const] : []),
+  );
+  const purchaseOrderById = new Map(purchaseOrders.map((order) => [order.id, order]));
+  const orderedAtByAssetId = new Map(
+    purchaseItems.map((item) => [
+      item.asset_id,
+      purchaseOrderById.get(item.purchase_order_id)?.ordered_at ?? null,
+    ]),
   );
 
   const itemsByShipment = new Map<string, ShipmentItemRow[]>();
@@ -291,7 +314,46 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
     }
   }
 
-  const logistics: LogisticsView[] = shipments.map((shipment) => {
+  const benchmarkSamples: LogisticsCostSample[] = shipments.flatMap((shipment) => {
+    const shipmentItems = itemsByShipment.get(shipment.id) ?? [];
+    const postedCost = sum(
+      shipmentItems.map((item) => postedCostByItemId.get(item.id) ?? 0),
+    );
+    const actualPaid = money(shipment.actual_paid_cny);
+    const weightG = nullableWhole(shipment.chargeable_weight_g);
+    const carrierService = shipment.carrier?.trim() ?? "";
+    if (
+      !carrierService
+      || weightG === null
+      || weightG <= 0
+      || actualPaid <= 0
+      || Math.abs(postedCost - actualPaid) > 0.01
+    ) return [];
+
+    const shipmentEvents = eventsByShipment.get(shipment.id) ?? [];
+    const dispatched = shipmentEvents.find(
+      (event) => event.raw_status === "Dispatch from outward office of exchange",
+    );
+    const delivered = [...shipmentEvents].reverse().find(
+      (event) => event.raw_status === "Final delivery",
+    );
+    const completedTransitDays = shipment.status === "delivered" && dispatched && delivered
+      ? Math.max(
+          0,
+          (new Date(delivered.occurred_at).getTime() - new Date(dispatched.occurred_at).getTime())
+            / 86_400_000,
+        )
+      : null;
+
+    return [{
+      carrierService,
+      chargeableWeightG: weightG,
+      actualCostCny: postedCost,
+      completedTransitDays,
+    }];
+  });
+
+  const logisticsRecords = shipments.map((shipment) => {
     const shipmentItems = itemsByShipment.get(shipment.id) ?? [];
     const shipmentEvents = eventsByShipment.get(shipment.id) ?? [];
     const latestRun = latestRunByShipment.get(shipment.id);
@@ -316,6 +378,10 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       };
     });
     const cameraNames = allocations.map((item) => item.cameraName).join(" · ");
+    const businessOrderAt = shipmentItems
+      .map((item) => orderedAtByAssetId.get(item.asset_id))
+      .filter((value): value is string => Boolean(value))
+      .sort((a, b) => b.localeCompare(a))[0] ?? shipment.created_at;
 
     const mappedEvents = shipmentEvents.map((event) => ({
       id: event.id,
@@ -351,7 +417,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
           )
         : null;
 
-    return {
+    const view: LogisticsView = {
       id: shipment.id,
       batchCode: shipmentDisplayName(shipment, cameraNames),
       carrier: shipment.carrier ?? "未记录承运商",
@@ -396,11 +462,26 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       allocations,
       events: mappedEvents,
     };
+    return {
+      view,
+      businessOrderAt,
+      sortGroup: shipment.status === "delivered" ? 1 : shipment.status === "cancelled" ? 2 : 0,
+      createdAt: shipment.created_at,
+    };
   });
+  const logistics = logisticsRecords
+    .sort((a, b) =>
+      a.sortGroup - b.sortGroup
+      || b.businessOrderAt.localeCompare(a.businessOrderAt)
+      || b.createdAt.localeCompare(a.createdAt)
+      || a.view.id.localeCompare(b.view.id)
+    )
+    .map((record) => record.view);
 
   return {
     ...dashboard,
     logistics,
+    logisticsBenchmarks: buildLogisticsBenchmarks(benchmarkSamples),
   };
 });
 
