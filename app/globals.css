@@ -228,17 +228,39 @@ button { color: inherit; }
 .primary-action:hover { color: var(--ink); background: var(--acid); }
 .operating-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; padding: 1px; background: var(--ink); }
 
-.logistics-benchmark { border: 1px solid var(--line-dark); background: var(--surface); }
-.logistics-benchmark > header { min-height: 104px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
-.logistics-benchmark > header h2 { margin: 8px 0 5px; font-size: 22px; letter-spacing: -.04em; }
-.logistics-benchmark > header p:last-child { margin: 0; color: var(--muted); font-size: 8px; }
-.logistics-benchmark > header > b { padding: 8px 10px; color: var(--acid); background: var(--ink); font: 650 8px/1 var(--font-data); }
-.logistics-benchmark > header label { display: grid; gap: 7px; color: var(--muted); font-size: 7px; }
-.logistics-benchmark > header select { min-width: 180px; height: 38px; padding: 0 10px; border: 1px solid var(--line-dark); background: white; font-size: 9px; }
-.benchmark-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; padding: 1px; background: var(--ink); }
-.external-reference-flag { display: flex; align-items: center; gap: 12px; padding: 10px 24px; border-bottom: 1px solid var(--line); background: #f5f4ef; }
-.external-reference-flag b { padding: 5px 7px; color: white; background: var(--ink); font-size: 7px; }
-.external-reference-flag span { color: var(--muted); font-size: 7px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.shipment-group { margin-top: 4px; }
+.shipment-group-heading { min-height: 46px; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+.shipment-group-heading div { display: flex; align-items: baseline; gap: 10px; }
+.shipment-group-heading span { color: var(--muted); font: 650 7px/1 var(--font-data); letter-spacing: .08em; }
+.shipment-group-heading h2 { margin: 0; font-size: 15px; letter-spacing: -.025em; }
+.shipment-group-heading > b { color: var(--muted); font: 600 8px/1 var(--font-data); }
+
+.logistics-benchmark { margin-top: 24px; border: 1px solid var(--line); background: var(--surface-2); }
+.logistics-benchmark > header { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.logistics-benchmark > header h2 { margin: 5px 0 0; font-size: 17px; letter-spacing: -.035em; }
+.logistics-benchmark > header > b { color: var(--muted); font: 600 8px/1 var(--font-data); }
+.logistics-benchmark > header label { min-width: 0; }
+.logistics-benchmark > header select { width: 220px; height: 32px; padding: 0 28px 0 9px; border: 1px solid transparent; border-radius: 0; color: var(--ink); background: var(--surface); font: 550 8px/1 var(--font-data); }
+.logistics-benchmark > header select:hover, .logistics-benchmark > header select:focus-visible { border-color: var(--line-dark); outline: none; }
+.benchmark-compact-summary { min-height: 74px; display: grid; grid-template-columns: 1.3fr 1fr 1fr .8fr; background: var(--line); gap: 1px; }
+.benchmark-compact-summary > div { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 10px 16px; background: var(--surface); }
+.benchmark-compact-summary small { color: var(--muted); font-size: 7px; }
+.benchmark-primary strong { font: 680 30px/.9 var(--font-data); letter-spacing: -.055em; }
+.benchmark-primary span { overflow: hidden; color: var(--muted); font: 7px/1 var(--font-data); text-overflow: ellipsis; white-space: nowrap; }
+.benchmark-compare b, .benchmark-saving b { font: 650 13px/1 var(--font-data); }
+.benchmark-confidence b { font: 650 13px/1 var(--font-data); }
+.benchmark-confidence span { width: fit-content; padding: 4px 6px; color: var(--muted); background: var(--surface-2); font: 650 6px/1 var(--font-data); }
+.benchmark-disclosure-bar { min-height: 44px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding-left: 16px; border-top: 1px solid var(--line); }
+.benchmark-disclosure-bar p { overflow: hidden; margin: 0; color: var(--muted); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.benchmark-disclosure-bar button { align-self: stretch; min-width: 112px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 0 14px; border: 0; border-left: 1px solid var(--line); color: var(--ink); background: transparent; cursor: pointer; font-size: 8px; }
+.benchmark-disclosure-bar button:hover, .benchmark-disclosure-bar button:focus-visible { color: white; background: var(--ink); outline: none; }
+.benchmark-expanded-detail { border-top: 1px solid var(--line); background: var(--surface); }
+.benchmark-detail-rows { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0; border-bottom: 1px solid var(--line); }
+.benchmark-detail-rows div { min-width: 0; display: grid; gap: 7px; padding: 13px 16px; border-right: 1px solid var(--line); }
+.benchmark-detail-rows div:last-child { border-right: 0; }
+.benchmark-detail-rows dt { color: var(--muted); font-size: 7px; }
+.benchmark-detail-rows dd { margin: 0; font: 600 9px/1 var(--font-data); }
 .shipment-estimator { display: grid; grid-template-columns: 1.15fr .85fr; gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
 .estimator-inputs { display: grid; grid-template-columns: 1fr 1.4fr; gap: 14px; padding: 22px 24px; background: var(--surface); }
 .estimator-inputs label { min-width: 0; display: grid; gap: 8px; color: var(--muted); font-size: 7px; }
@@ -254,13 +276,10 @@ button { color: inherit; }
 .estimate-allocation { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 13px 24px; background: var(--surface-2); }
 .estimate-allocation span { color: var(--muted); font-size: 7px; }
 .estimate-allocation b { font: 550 7px/1 var(--font-data); }
-.service-comparison { display: grid; grid-template-columns: auto auto auto 1fr; align-items: center; gap: 10px 18px; padding: 13px 24px; border-top: 1px solid var(--line); background: var(--surface-2); }
-.service-comparison span { color: var(--muted); font-size: 7px; }
-.service-comparison b { font: 600 8px/1 var(--font-data); }
-.service-comparison small { color: var(--muted); font: 7px/1.45 var(--font-data); }
-.logistics-benchmark > footer { padding: 12px 24px; color: var(--muted); border-top: 1px solid var(--line); font: 7px/1.4 var(--font-data); }
+.benchmark-model-note { margin: 0; padding: 11px 16px; color: var(--muted); border-top: 1px solid var(--line); font: 7px/1.4 var(--font-data); }
 
-.shipment-stack { display: grid; gap: 14px; margin-top: 14px; }
+.shipment-stack { display: grid; gap: 14px; margin-top: 10px; }
+.logistics-benchmark + .shipment-group { margin-top: 24px; }
 .shipment-card { border: 1px solid var(--line-dark); background: var(--surface); }
 .shipment-card > header { min-height: 108px; display: flex; align-items: center; justify-content: space-between; gap: 30px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
 .batch-code { padding: 5px 7px; color: var(--acid); background: var(--ink); font: 700 7px/1 var(--font-data); }
@@ -670,11 +689,10 @@ button { color: inherit; }
   .position-summary { gap: 8px 0; }
   .position-summary span { padding: 0 12px; }
   .operating-metrics, .condition-board { grid-template-columns: 1fr 1fr; }
-  .logistics-benchmark > header { align-items: flex-start; flex-direction: column; }
-  .benchmark-metrics { grid-template-columns: 1fr 1fr; }
   .shipment-estimator { grid-template-columns: 1fr; }
-  .service-comparison { grid-template-columns: 1fr 1fr; }
-  .service-comparison span, .service-comparison small { grid-column: 1 / -1; }
+  .benchmark-detail-rows { grid-template-columns: 1fr 1fr; }
+  .benchmark-detail-rows div:nth-child(2) { border-right: 0; }
+  .benchmark-detail-rows div:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
   .shipment-card > header { align-items: flex-start; flex-direction: column; }
   .shipment-state { text-align: left; }
   .shipment-facts { grid-template-columns: 1fr 1fr; }
@@ -731,10 +749,22 @@ button { color: inherit; }
   .allocation-ledger header, .allocation-ledger > div { grid-template-columns: 1fr auto; }
   .allocation-ledger > div small { display: none; }
   .allocation-ledger .allocation-amount small { display: block; }
-  .benchmark-metrics, .estimator-inputs { grid-template-columns: 1fr; }
-  .external-reference-flag { align-items: flex-start; flex-direction: column; }
-  .service-comparison { grid-template-columns: 1fr; }
-  .service-comparison span, .service-comparison small { grid-column: auto; }
+  .logistics-benchmark > header { min-height: 68px; align-items: stretch; flex-direction: column; gap: 8px; padding: 10px 12px; }
+  .logistics-benchmark > header > div { display: flex; align-items: baseline; gap: 9px; }
+  .logistics-benchmark > header h2 { margin: 0; }
+  .logistics-benchmark > header select { width: 100%; height: 32px; }
+  .benchmark-compact-summary { min-height: 92px; grid-template-columns: 1.15fr .85fr; }
+  .benchmark-compact-summary > div { min-height: 45px; gap: 4px; padding: 7px 12px; }
+  .benchmark-primary strong { font-size: 27px; }
+  .benchmark-primary span { display: none; }
+  .benchmark-compare b, .benchmark-saving b, .benchmark-confidence b { font-size: 11px; }
+  .benchmark-disclosure-bar { min-height: 44px; gap: 8px; padding-left: 12px; }
+  .benchmark-disclosure-bar p { font-size: 6px; }
+  .benchmark-disclosure-bar button { min-width: 104px; }
+  .benchmark-detail-rows, .estimator-inputs { grid-template-columns: 1fr; }
+  .benchmark-detail-rows div, .benchmark-detail-rows div:nth-child(2) { border-right: 0; border-bottom: 1px solid var(--line); }
+  .benchmark-detail-rows div:last-child { border-bottom: 0; }
+  .shipment-group-heading div { align-items: flex-start; flex-direction: column; gap: 5px; }
   .analysis-metrics { grid-template-columns: 1fr; }
   .decision-control-grid.three, .decision-control-grid.costs { grid-template-columns: 1fr; }
   .decision-workbench .decision-intro, .decision-fieldset { padding: 24px 18px; }

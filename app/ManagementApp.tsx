@@ -466,64 +466,10 @@ function InvestmentCard({ asset, sale, open, readOnly }: { asset: AssetView; sal
   );
 }
 
-function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracking }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>) => void; refreshTracking: (order: LogisticsView) => void; busy: boolean; canRefreshTracking: boolean }) {
-  const benchmarks = data.logisticsBenchmarks ?? [];
-  const benchmarkKey = (item: (typeof benchmarks)[number]) => `${item.scope}:${item.carrierService}`;
-  const [selectedCarrier, setSelectedCarrier] = useState(benchmarks[0] ? benchmarkKey(benchmarks[0]) : "");
-  const [estimatedWeightG, setEstimatedWeightG] = useState(600);
-  const [bundleWeightText, setBundleWeightText] = useState("");
-  const benchmark = benchmarks.find((item) => benchmarkKey(item) === selectedCarrier) ?? benchmarks[0];
-  const estimatedCost = benchmark ? estimateShipmentCost(benchmark, estimatedWeightG) : null;
-  const externalAirPacket = benchmarks.find((item) => item.scope === "external_private" && item.carrierService.includes("AIR Packet"));
-  const portfolioEms = benchmarks.find((item) => item.scope === "portfolio_actual" && item.carrierService.includes("EMS"));
-  const airPacketAt600 = externalAirPacket ? estimateShipmentCost(externalAirPacket, 600) : null;
-  const emsAt600 = portfolioEms ? estimateShipmentCost(portfolioEms, 600) : null;
-  const t2ReferenceWeight = data.assets.find((asset) =>
-    asset.brand.toLowerCase() === "contax"
-    && asset.model.toLowerCase().startsWith("t2")
-    && asset.weightG > 0
-  )?.weightG ?? null;
-  const bundleWeights = bundleWeightText
-    .split(/[,，\s]+/)
-    .map(Number)
-    .filter((weight) => Number.isFinite(weight) && weight > 0);
-  const bundleAllocations = estimatedCost === null || bundleWeights.length < 2
-    ? []
-    : allocateEstimateByWeight(estimatedCost, bundleWeights);
+function LogisticsShipmentCard({ order, refreshTracking, busy, canRefreshTracking }: { order: LogisticsView; refreshTracking: (order: LogisticsView) => void; busy: boolean; canRefreshTracking: boolean }) {
+  const localizedAssetNames = order.allocations.map((allocation) => getLocalizedNameFromFormalName(allocation.cameraName)).filter((name): name is string => Boolean(name));
   return (
-    <>
-      <div className="toolbar-row"><div className="position-summary"><span>追踪中 <b>{data.logistics.filter((order) => order.trackingNumber && order.status !== "已签收").length}</b></span><span>总批次 <b>{data.logistics.length}</b></span></div>{!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("logistics")}>＋ 新增物流单</button>}</div>
-      {benchmark ? <section className="logistics-benchmark" aria-label="物流经验参考">
-        <header>
-          <div><p className="eyebrow">COST BENCHMARK</p><h2>物流经验参考</h2><p>基于 Lensfolio 历史实际物流成本的经验估算，不是承运商官方运价。</p></div>
-          {benchmarks.length > 1 ? <label><span>承运服务</span><select value={benchmarkKey(benchmark)} onChange={(event) => setSelectedCarrier(event.target.value)}>{benchmarks.map((item) => <option key={benchmarkKey(item)} value={benchmarkKey(item)}>{item.carrierService}{item.scope === "external_private" ? " · 外部私人参考" : ""}</option>)}</select></label> : <b>{benchmark.carrierService}</b>}
-        </header>
-        {benchmark.scope === "external_private" && <div className="external-reference-flag"><b>外部私人参考样本</b><span>不属于 Lensfolio 投资持仓，不计入资产、成本、ROI 或估值覆盖。</span></div>}
-        <div className="benchmark-metrics">
-          <Metric label="已结算样本" value={`${benchmark.sampleCount} 批`} note={benchmark.confidenceLabel} compact />
-          <Metric label="平均实际运费" value={cny(benchmark.averageActualCostCny, 2)} note={`${cny(benchmark.minimumActualCostCny)}–${cny(benchmark.maximumActualCostCny)}`} compact />
-          <Metric label="合并重量成本" value={`${cny(benchmark.weightedCostPerKgCny, 2)} / kg`} note="按实际计费重量加权" compact />
-          <Metric label="典型运输时长" value={benchmark.typicalTransitDays === null ? "—" : `${number(benchmark.typicalTransitDays, 1)} 天`} note={`${benchmark.completedTransitSampleCount} 个完整终点样本`} compact />
-        </div>
-        <div className="shipment-estimator">
-          <div className="estimator-inputs">
-            <label><span>预计计费重量</span><div><input type="number" min="1" step="10" inputMode="decimal" value={estimatedWeightG} onChange={(event) => setEstimatedWeightG(Math.max(0, Number(event.target.value)))} /><b>g</b></div>{t2ReferenceWeight && <small>同系 Contax T2 实测参考约 {t2ReferenceWeight}g，仅用于估算</small>}</label>
-            <label><span>多资产分摊重量（可选）</span><input type="text" inputMode="decimal" value={bundleWeightText} onChange={(event) => setBundleWeightText(event.target.value)} placeholder="例如 551, 603" /></label>
-          </div>
-          <div className="estimator-output">
-            <span>预计批次总运费</span><strong>{estimatedCost === null ? "—" : cny(estimatedCost, 2)}</strong>
-            <small>{estimatedCost === null || estimatedWeightG <= 0 ? "请输入有效计费重量" : `${cny(estimatedCost / (estimatedWeightG / 1000), 2)} / kg · ${benchmark.confidenceLabel} · ${benchmark.sampleCount} 个样本`}</small>
-          </div>
-          {bundleAllocations.length > 0 && <div className="estimate-allocation"><span>按资产重量占比分摊预计总额</span>{bundleAllocations.map((allocation, index) => <b key={`${allocation.weightG}-${index}`}>资产 {index + 1} · {allocation.weightG}g · {cny(allocation.amountCny, 2)}</b>)}</div>}
-        </div>
-        {airPacketAt600 !== null && emsAt600 !== null && <div className="service-comparison"><span>600g 当前样本对比</span><b>AIR Packet 外部参考约 {cny(airPacketAt600, 2)}</b><b>EMS 历史估算约 {cny(emsAt600, 2)}</b><small>AIR Packet 当前样本约低 {cny(emsAt600 - airPacketAt600, 2)} / {number((emsAt600 - airPacketAt600) / emsAt600 * 100, 1)}%。仅比较成本；缺少完整签收证据，不能比较速度。成本优先可参考 AIR Packet，追踪、时效与风险优先可参考 EMS。</small></div>}
-        <footer>{benchmark.modelKind === "linear" ? `经验模型：${cny(benchmark.fixedComponentCny, 2)} 固定项 + ${cny(benchmark.variablePerKgCny, 2)}/kg` : `样本不足，使用历史中位数 ${cny(benchmark.medianActualCostCny, 2)}`}</footer>
-      </section> : <p className="panel-empty">尚无可用于估算的已结算物流样本。</p>}
-      <div className="shipment-stack">
-        {data.logistics.map((order) => {
-          const localizedAssetNames = order.allocations.map((allocation) => getLocalizedNameFromFormalName(allocation.cameraName)).filter((name): name is string => Boolean(name));
-          return (
-          <article className="shipment-card" key={order.id}>
+    <article className="shipment-card">
             <header>
               <div><span className="batch-code">{order.batchCode}</span><h2>{order.carrier}</h2><p>{order.cameraNames}</p>{localizedAssetNames.length > 0 && <small className="shipment-localized-names">{localizedAssetNames.join(" · ")}</small>}</div>
               <div className={`shipment-state ${order.anomaly ? "has-alert" : ""}`}><i /><strong>{order.status}</strong><small>{order.anomaly || order.latestEvent || "尚无轨迹"}</small></div>
@@ -569,10 +515,92 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
                 {canRefreshTracking && isJapanPostTrackingNumber(order.trackingNumber) && (order.carrier.includes("EMS") || order.carrier.includes("日本邮政")) && <button type="button" disabled={busy} onClick={() => refreshTracking(order)}>立即同步</button>}
               </div>
             </footer>
-          </article>
-          );
-        })}
-      </div>
+    </article>
+  );
+}
+
+function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracking }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>) => void; refreshTracking: (order: LogisticsView) => void; busy: boolean; canRefreshTracking: boolean }) {
+  const benchmarks = data.logisticsBenchmarks ?? [];
+  const benchmarkKey = (item: (typeof benchmarks)[number]) => `${item.scope}:${item.carrierService}`;
+  const externalAirPacket = benchmarks.find((item) => item.scope === "external_private" && item.carrierService.includes("AIR Packet"));
+  const portfolioEms = benchmarks.find((item) => item.scope === "portfolio_actual" && item.carrierService.includes("EMS"));
+  const defaultBenchmark = externalAirPacket ?? benchmarks[0];
+  const [selectedCarrier, setSelectedCarrier] = useState(defaultBenchmark ? benchmarkKey(defaultBenchmark) : "");
+  const [estimatorExpanded, setEstimatorExpanded] = useState(false);
+  const [estimatedWeightG, setEstimatedWeightG] = useState(600);
+  const [bundleWeightText, setBundleWeightText] = useState("");
+  const benchmark = benchmarks.find((item) => benchmarkKey(item) === selectedCarrier) ?? defaultBenchmark;
+  const estimatedCost = benchmark ? estimateShipmentCost(benchmark, estimatedWeightG) : null;
+  const selectedAt600 = benchmark ? estimateShipmentCost(benchmark, 600) : null;
+  const comparisonBenchmark = benchmark?.scope === "external_private" ? portfolioEms : externalAirPacket;
+  const comparisonAt600 = comparisonBenchmark ? estimateShipmentCost(comparisonBenchmark, 600) : null;
+  const comparisonDifference = selectedAt600 !== null && comparisonAt600 !== null
+    ? comparisonAt600 - selectedAt600
+    : null;
+  const comparisonPercent = comparisonDifference !== null && comparisonAt600
+    ? Math.abs(comparisonDifference) / comparisonAt600 * 100
+    : null;
+  const t2ReferenceWeight = data.assets.find((asset) =>
+    asset.brand.toLowerCase() === "contax"
+    && asset.model.toLowerCase().startsWith("t2")
+    && asset.weightG > 0
+  )?.weightG ?? null;
+  const bundleWeights = bundleWeightText
+    .split(/[,，\s]+/)
+    .map(Number)
+    .filter((weight) => Number.isFinite(weight) && weight > 0);
+  const bundleAllocations = estimatedCost === null || bundleWeights.length < 2
+    ? []
+    : allocateEstimateByWeight(estimatedCost, bundleWeights);
+  const activeShipments = data.logistics.filter((order) => order.status !== "已签收" && order.status !== "已取消");
+  const deliveredShipments = data.logistics.filter((order) => order.status === "已签收");
+  const otherShipments = data.logistics.filter((order) => order.status === "已取消");
+  const shipmentGroup = (label: string, title: string, orders: LogisticsView[]) => orders.length > 0 && (
+    <section className="shipment-group">
+      <header className="shipment-group-heading"><div><span>{label}</span><h2>{title}</h2></div><b>{orders.length} 批</b></header>
+      <div className="shipment-stack">{orders.map((order) => <LogisticsShipmentCard key={order.id} order={order} refreshTracking={refreshTracking} busy={busy} canRefreshTracking={canRefreshTracking} />)}</div>
+    </section>
+  );
+
+  return (
+    <>
+      <div className="toolbar-row"><div className="position-summary"><span>追踪中 <b>{data.logistics.filter((order) => order.trackingNumber && order.status !== "已签收").length}</b></span><span>总批次 <b>{data.logistics.length}</b></span></div>{!data.migrationReadOnly && <button className="primary-action" type="button" onClick={() => open("logistics")}>＋ 新增物流单</button>}</div>
+      {shipmentGroup("ACTIVE SHIPMENTS", "运输中与待处理", activeShipments)}
+      {benchmark ? <section className={`logistics-benchmark${estimatorExpanded ? " is-expanded" : ""}`} aria-label="物流经验参考">
+        <header>
+          <div><p className="eyebrow">COST BENCHMARK</p><h2>物流经验参考</h2></div>
+          {benchmarks.length > 1 ? <label><span className="sr-only">承运服务</span><select aria-label="承运服务" value={benchmarkKey(benchmark)} onChange={(event) => setSelectedCarrier(event.target.value)}>{benchmarks.map((item) => <option key={benchmarkKey(item)} value={benchmarkKey(item)}>{item.carrierService}{item.scope === "external_private" ? " · 外部私人参考" : ""}</option>)}</select></label> : <b>{benchmark.carrierService}</b>}
+        </header>
+        <div className="benchmark-compact-summary">
+          <div className="benchmark-primary"><small>{benchmark.scope === "external_private" ? "600g 外部参考" : "600g 历史估算"}</small><strong>{selectedAt600 === null ? "—" : cny(selectedAt600, 0)}</strong><span>{benchmark.carrierService}</span></div>
+          <div className="benchmark-compare"><small>{comparisonBenchmark ? `${comparisonBenchmark.carrierService.replace("日本邮政 ", "")} 同重量估算` : "同重量比较"}</small><b>{comparisonAt600 === null ? "—" : cny(comparisonAt600, 0)}</b></div>
+          <div className="benchmark-saving"><small>{comparisonDifference !== null && comparisonDifference >= 0 ? "节省" : "差额"}</small><b>{comparisonDifference === null ? "—" : `${comparisonDifference >= 0 ? "约 " : "+"}${cny(Math.abs(comparisonDifference), 0)}${comparisonPercent === null ? "" : ` / ${number(comparisonPercent, 1)}%`}`}</b></div>
+          <div className="benchmark-confidence"><small>样本</small><b>{benchmark.sampleCount}</b><span>{benchmark.confidenceLabel}置信度</span></div>
+        </div>
+        <div className="benchmark-disclosure-bar"><p>{benchmark.scope === "external_private" ? "外部私人参考样本，仅用于物流比较，不计入投资组合。" : "基于 Lensfolio 历史实际物流成本的经验估算，不是承运商官方运价。"}</p><button type="button" aria-expanded={estimatorExpanded} onClick={() => setEstimatorExpanded((expanded) => !expanded)}>{estimatorExpanded ? "收起估算" : "展开估算"}<span aria-hidden="true">{estimatorExpanded ? "↑" : "↓"}</span></button></div>
+        {estimatorExpanded && <div className="benchmark-expanded-detail">
+          <dl className="benchmark-detail-rows">
+            <div><dt>平均实际运费</dt><dd>{cny(benchmark.averageActualCostCny, 2)}</dd></div>
+            <div><dt>历史区间</dt><dd>{cny(benchmark.minimumActualCostCny)}–{cny(benchmark.maximumActualCostCny)}</dd></div>
+            <div><dt>加权成本</dt><dd>{cny(benchmark.weightedCostPerKgCny, 2)} / kg</dd></div>
+            <div><dt>完整时效样本</dt><dd>{benchmark.completedTransitSampleCount}{benchmark.typicalTransitDays === null ? "" : ` · ${number(benchmark.typicalTransitDays, 1)} 天`}</dd></div>
+          </dl>
+          <div className="shipment-estimator">
+            <div className="estimator-inputs">
+              <label><span>预计计费重量</span><div><input type="number" min="1" step="10" inputMode="decimal" value={estimatedWeightG} onChange={(event) => setEstimatedWeightG(Math.max(0, Number(event.target.value)))} /><b>g</b></div>{t2ReferenceWeight && <small>同系 Contax T2 实测参考约 {t2ReferenceWeight}g，仅用于估算</small>}</label>
+              <label><span>多资产分摊重量（可选）</span><input type="text" inputMode="decimal" value={bundleWeightText} onChange={(event) => setBundleWeightText(event.target.value)} placeholder="例如 551, 603" /></label>
+            </div>
+            <div className="estimator-output">
+              <span>预计批次总运费</span><strong>{estimatedCost === null ? "—" : cny(estimatedCost, 2)}</strong>
+              <small>{estimatedCost === null || estimatedWeightG <= 0 ? "请输入有效计费重量" : `${cny(estimatedCost / (estimatedWeightG / 1000), 2)} / kg · ${benchmark.confidenceLabel} · ${benchmark.sampleCount} 个样本`}</small>
+            </div>
+            {bundleAllocations.length > 0 && <div className="estimate-allocation"><span>按资产重量占比分摊预计总额</span>{bundleAllocations.map((allocation, index) => <b key={`${allocation.weightG}-${index}`}>资产 {index + 1} · {allocation.weightG}g · {cny(allocation.amountCny, 2)}</b>)}</div>}
+          </div>
+          <p className="benchmark-model-note">{benchmark.modelKind === "linear" ? `经验模型：${cny(benchmark.fixedComponentCny, 2)} 固定项 + ${cny(benchmark.variablePerKgCny, 2)}/kg` : `样本不足，使用历史中位数 ${cny(benchmark.medianActualCostCny, 2)}`}</p>
+        </div>}
+      </section> : <p className="panel-empty">尚无可用于估算的已结算物流样本。</p>}
+      {shipmentGroup("DELIVERED", "已签收批次", deliveredShipments)}
+      {shipmentGroup("OTHER", "其他批次", otherShipments)}
       <p className="source-note">{data.dataSource === "supabase" ? "追踪数据仅在 owner / editor 明确点击“立即同步”后从日本邮政公开查询页面写入；页面加载不会自动查询。" : data.migrationReadOnly ? "迁移保护期间，自动物流更新与状态变化已暂停。" : "追踪数据来自日本邮政公开查询页面。"}</p>
     </>
   );
