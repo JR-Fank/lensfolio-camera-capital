@@ -495,60 +495,61 @@ function modelPoolSortValue(pool: ModelInventoryPool, sortBy: ModelPoolSort) {
 }
 
 function InvestmentCard({ asset, sale, open, readOnly }: { asset: AssetView; sale?: SaleView; open: (kind: Exclude<ModalKind, null>, id?: string) => void; readOnly: boolean }) {
+  const [expanded, setExpanded] = useState(false);
   const normalRoi = asset.roi;
   const isSold = asset.lifecycleStatus === "已出售";
   const hasValuation = asset.marketMedianCny !== null;
   const pendingShipping = asset.pendingShippingCny ?? 0;
   const confidence = Math.max(0, Math.min(5, Math.round(asset.valuationConfidence * 5)));
   const localizedName = getAssetLocalizedName(asset.brand, asset.model);
+  const valuationSource = asset.valuationSource.includes("闲鱼") ? "闲鱼挂牌价" : asset.valuationSource;
   return (
-    <article className="investment-card">
+    <article className={`investment-card compact${isSold ? " sold-card" : ""}${hasValuation ? "" : " unvalued-card"}${expanded ? " is-expanded" : ""}`}>
       <header>
         <div><p>{asset.brand.toUpperCase()}</p><h3>{asset.model}</h3>{localizedName && <small className="asset-localized-name">{localizedName}</small>}{asset.variant && <small>{asset.variant}</small>}</div>
-        <div className={`asset-status${isSold ? " sold" : ""}`}><span className={`status-dot ${asset.repairStatus === "待维修" ? "warn" : ""}`} />{isSold ? "已出售" : asset.repairStatus}</div>
+        <div className="asset-card-badges">{asset.conditionGrade && <span className="asset-condition">{asset.conditionGrade}</span>}<span className={`asset-status${isSold ? " sold" : ""}`}><i className={`status-dot ${asset.repairStatus === "待维修" ? "warn" : ""}`} />{isSold ? "已出售" : asset.repairStatus}</span></div>
       </header>
-      <div className="card-split">
-        <div className="cost-ledger">
-          <p className="micro-title">真实成本 / COST BASIS</p>
-          <div className="true-cost"><span>实际已投入成本</span><strong>{cny(asset.trueCost)}</strong></div>
-          <LedgerRow label="采购人民币实付" value={cny(asset.purchaseCny)} />
-          <LedgerRow label="已付国际物流" value={cny(asset.internationalShippingCny)} />
-          {pendingShipping > 0 && <LedgerRow label="待付国际物流" value={`${cny(pendingShipping)} 预算`} />}
-          <LedgerRow label="维修费用" value={cny(asset.repairCny)} />
-          <LedgerRow label="其他费用" value={cny(asset.otherCostCny)} />
-          {pendingShipping > 0 && <LedgerRow label="预计完全落地" value={cny(asset.trueCost + pendingShipping)} total />}
-          <details className="procurement-detail"><summary>展开日元采购明细</summary><div><LedgerRow label="日本购买价格" value={jpy(asset.purchaseJpy)} /><LedgerRow label="日元汇率" value={asset.exchangeRate.toFixed(4)} /><LedgerRow label="订单日本境内运费" value={jpy(asset.domesticShippingJpy)} /></div></details>
-        </div>
-        {isSold ? (
-          <div className="market-ledger realized-ledger">
+      <dl className="asset-card-metrics">
+        <div><dt>真实成本</dt><dd>{cny(asset.trueCost)}</dd></div>
+        <div><dt>{isSold ? "净回款" : "当前估值"}</dt><dd>{isSold ? nullableCny(sale?.netProceedsCny ?? null) : nullableCny(asset.expectedSaleCny)}</dd></div>
+        <div><dt>{isSold ? "已实现利润" : "未实现利润"}</dt><dd className={performanceClass(isSold ? sale?.finalProfit ?? null : asset.normalProfit)}>{signed(isSold ? sale?.finalProfit ?? null : asset.normalProfit)}</dd></div>
+        <div><dt>{isSold ? "已实现 ROI" : "ROI"}</dt><dd className={performanceClass(isSold ? sale?.realizedRoi ?? null : normalRoi)}>{pct(isSold ? sale?.realizedRoi ?? null : normalRoi)}</dd></div>
+      </dl>
+      <div className="asset-cost-summary">
+        <span>采购 {cny(asset.purchaseCny)}</span><span>国际物流 {cny(asset.internationalShippingCny)}</span><span className={asset.repairCny > 0 ? "has-extra-cost" : ""}>维修 {cny(asset.repairCny)}</span><span className={asset.otherCostCny > 0 ? "has-extra-cost" : ""}>其他 {cny(asset.otherCostCny)}</span>{pendingShipping > 0 && <span className="pending-cost">待付物流 {cny(pendingShipping)} 预算</span>}
+      </div>
+      {isSold ? <div className="asset-sale-summary"><span>成交 {calendarDate(sale?.soldAt ?? null)}</span><span>{sale?.platform ?? "未记录平台"}</span><span>净回款 {nullableCny(sale?.netProceedsCny ?? null)}</span></div> : <div className={`asset-valuation-summary${hasValuation ? "" : " unvalued"}`}><span>估值区间 <b>{hasValuation ? `${nullableCny(asset.marketLowCny)}–${nullableCny(asset.marketHighCny)}` : "—"}</b></span><small>{asset.valuationDate ? `${valuationSource} · ${sampleCount(asset.valuationSampleSize)} · ${"★".repeat(confidence)}${"☆".repeat(5 - confidence)}` : "待录入估价"}</small></div>}
+      {expanded && <div className="asset-card-expanded">
+        <div className="card-split">
+          <div className="cost-ledger">
+            <p className="micro-title">真实成本 / COST BASIS</p>
+            <div className="true-cost"><span>实际已投入成本</span><strong>{cny(asset.trueCost)}</strong></div>
+            <LedgerRow label="采购人民币实付" value={cny(asset.purchaseCny)} />
+            <LedgerRow label="已付国际物流" value={cny(asset.internationalShippingCny)} />
+            {pendingShipping > 0 && <LedgerRow label="待付国际物流" value={`${cny(pendingShipping)} 预算`} />}
+            <LedgerRow label="维修费用" value={cny(asset.repairCny)} />
+            <LedgerRow label="其他费用" value={cny(asset.otherCostCny)} />
+            {pendingShipping > 0 && <LedgerRow label="预计完全落地" value={cny(asset.trueCost + pendingShipping)} total />}
+            <details className="procurement-detail"><summary>展开日元采购明细</summary><div><LedgerRow label="日本购买价格" value={jpy(asset.purchaseJpy)} /><LedgerRow label="日元汇率" value={asset.exchangeRate.toFixed(4)} /><LedgerRow label="订单日本境内运费" value={jpy(asset.domesticShippingJpy)} /></div></details>
+          </div>
+          {isSold ? <div className="market-ledger realized-ledger">
             <p className="micro-title">退出结算 / REALIZED EXIT</p>
             <div className="exit-price"><small>实际净回款 / NET PROCEEDS</small><strong>{nullableCny(sale?.netProceedsCny ?? null)}</strong><em>{sale?.platform ?? "未记录平台"} · {calendarDate(sale?.soldAt ?? null)}</em></div>
             <LedgerRow label="销售成交总额" value={nullableCny(sale?.grossProceedsCny ?? null)} />
             <LedgerRow label="销售费用 / 出库物流" value={sale ? cny(sale.platformFeeCny + sale.shippingCny) : "—"} />
             {hasValuation && <details className="historical-valuation"><summary>查看出售前历史估值</summary><div className="market-range"><span><small>P25 / 下限</small><b>{nullableCny(asset.marketLowCny)}</b></span><span><small>历史中位</small><b>{nullableCny(asset.marketMedianCny)}</b></span><span><small>P75 / 上限</small><b>{nullableCny(asset.marketHighCny)}</b></span></div></details>}
-          </div>
-        ) : (
-          <div className={`market-ledger${hasValuation ? "" : " unvalued"}`}>
+          </div> : <div className={`market-ledger${hasValuation ? "" : " unvalued"}`}>
             <p className="micro-title">市场估值 / MARK TO MARKET</p>
-            <div className="market-range"><span><small>区间下限</small><b>{nullableCny(asset.marketLowCny)}</b></span><span><small>市场中位</small><b>{nullableCny(asset.marketMedianCny, "未估值")}</b></span><span><small>区间上限</small><b>{nullableCny(asset.marketHighCny)}</b></span></div>
-            <div className="expected-price"><small>当前估值</small><strong>{nullableCny(asset.expectedSaleCny, "未估值")}</strong><em>{asset.valuationDate ? `${asset.valuationSource} · ${sampleCount(asset.valuationSampleSize)} · ${"★".repeat(confidence)}${"☆".repeat(5 - confidence)}` : "待录入估价"}</em></div>
-          </div>
-        )}
-      </div>
-      {isSold ? <div className="scenario-ledger realized-scenario">
-        <span><small>净回款</small><b>{nullableCny(sale?.netProceedsCny ?? null)}</b></span>
-        <span><small>已实现利润</small><b className={performanceClass(sale?.finalProfit ?? null)}>{signed(sale?.finalProfit ?? null)}</b></span>
-        <span className="roi-cell"><small>已实现 ROI</small><b className={performanceClass(sale?.realizedRoi ?? null)}>{pct(sale?.realizedRoi ?? null)}</b></span>
-        <span><small>成交 / 持有</small><b>{calendarDate(sale?.soldAt ?? null)} · {sale?.holdingDays ?? 0} 天</b></span>
-      </div> : <div className="scenario-ledger">
-          <span><small>保守利润</small><b className={performanceClass(asset.conservativeProfit)}>{signed(asset.conservativeProfit)}</b></span>
-          <span><small>正常利润</small><b className={performanceClass(asset.normalProfit)}>{signed(asset.normalProfit)}</b></span>
-          <span><small>乐观利润</small><b className={performanceClass(asset.optimisticProfit)}>{signed(asset.optimisticProfit)}</b></span>
-          <span className="roi-cell"><small>中位价 ROI</small><b className={performanceClass(normalRoi)}>{pct(normalRoi)}</b></span>
-        </div>}
+            <div className="market-range"><span><small>P25 / 下限</small><b>{nullableCny(asset.marketLowCny)}</b></span><span><small>市场中位</small><b>{nullableCny(asset.marketMedianCny, "未估值")}</b></span><span><small>P75 / 上限</small><b>{nullableCny(asset.marketHighCny)}</b></span></div>
+            <div className="expected-price"><small>当前估值</small><strong>{nullableCny(asset.expectedSaleCny, "未估值")}</strong><em>{asset.valuationDate ? `${valuationSource} · ${sampleCount(asset.valuationSampleSize)} · ${"★".repeat(confidence)}${"☆".repeat(5 - confidence)}` : "待录入估价"}</em></div>
+          </div>}
+        </div>
+        {isSold ? <div className="scenario-ledger realized-scenario"><span><small>净回款</small><b>{nullableCny(sale?.netProceedsCny ?? null)}</b></span><span><small>已实现利润</small><b className={performanceClass(sale?.finalProfit ?? null)}>{signed(sale?.finalProfit ?? null)}</b></span><span className="roi-cell"><small>已实现 ROI</small><b className={performanceClass(sale?.realizedRoi ?? null)}>{pct(sale?.realizedRoi ?? null)}</b></span><span><small>成交 / 持有</small><b>{calendarDate(sale?.soldAt ?? null)} · {sale?.holdingDays ?? 0} 天</b></span></div> : <div className="scenario-ledger"><span><small>保守利润</small><b className={performanceClass(asset.conservativeProfit)}>{signed(asset.conservativeProfit)}</b></span><span><small>中性利润</small><b className={performanceClass(asset.normalProfit)}>{signed(asset.normalProfit)}</b></span><span><small>乐观利润</small><b className={performanceClass(asset.optimisticProfit)}>{signed(asset.optimisticProfit)}</b></span><span className="roi-cell"><small>中位价 ROI</small><b className={performanceClass(normalRoi)}>{pct(normalRoi)}</b></span></div>}
+        <div className="asset-card-detail-actions">{!readOnly && !isSold && <button type="button" onClick={() => open("valuation", asset.id)}>更新估价</button>}<Link href={`/cameras/${asset.id}`}>机器详情 →</Link></div>
+      </div>}
       <footer>
         <span>{isSold ? `${calendarDate(sale?.soldAt ?? null)} 成交 · ${sale?.holdingDays ?? 0} 天持有` : `${asset.holdingDays} 天持有 · ${asset.lifecycleStatus}`}</span>
-        <div>{!readOnly && !isSold && <button type="button" onClick={() => open("valuation", asset.id)}>更新估价</button>}<Link href={`/cameras/${asset.id}`}>机器详情 →</Link></div>
+        <button className="asset-card-disclosure" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "收起详情" : "展开详情"}<span aria-hidden="true">{expanded ? "↑" : "↓"}</span></button>
       </footer>
     </article>
   );
