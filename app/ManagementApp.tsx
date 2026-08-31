@@ -424,16 +424,16 @@ function ModelInventoryPools({ assets, mode }: { assets: AssetView[]; mode: "ass
   return (
     <section className={`model-pool-section ${mode}`}>
       <header>
-        <div><p className="eyebrow">MODEL INVENTORY POOL</p><h2>同型号持仓</h2><span>独立成本不变；这里只聚合同型号 held assets 的经营与定价空间。</span></div>
-        {mode === "analysis" && <label><span>排序</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value as ModelPoolSort)}><option value="advantage">混合成本优势</option><option value="capital">资金占用</option><option value="profit">市场中位预测利润</option><option value="units">持有数量</option></select></label>}
+        <div><h2>同型号持仓</h2><span>聚合同型号持仓的成本与定价空间，单机真实成本保持独立。</span></div>
+        {mode === "analysis" && <label className="model-pool-sort"><span>排序方式</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value as ModelPoolSort)}><option value="advantage">混合成本优势</option><option value="capital">资金占用</option><option value="profit">市场中位预测利润</option><option value="units">持有数量</option></select></label>}
       </header>
-      <div className="model-pool-list">{sortedPools.map((pool) => <ModelPoolCard key={pool.key} pool={pool} defaultOpen={mode === "analysis"} />)}</div>
+      <div className="model-pool-list">{sortedPools.map((pool) => <ModelPoolCard key={pool.key} pool={pool} />)}</div>
     </section>
   );
 }
 
-function ModelPoolCard({ pool, defaultOpen }: { pool: ModelInventoryPool; defaultOpen: boolean }) {
-  const [expanded, setExpanded] = useState(defaultOpen);
+function ModelPoolCard({ pool }: { pool: ModelInventoryPool }) {
+  const [expanded, setExpanded] = useState(false);
   const [averageSalePrice, setAverageSalePrice] = useState(Math.round(pool.latestModelMarketMedian ?? pool.averageCarryingCost));
   const [sellingFeePerUnit, setSellingFeePerUnit] = useState(0);
   const [targetRoi, setTargetRoi] = useState(20);
@@ -441,24 +441,27 @@ function ModelPoolCard({ pool, defaultOpen }: { pool: ModelInventoryPool; defaul
   const confirmed = calculateModelPoolScenario(pool.confirmedCarryingCost, pool.confirmedUnits, averageSalePrice, sellingFeePerUnit, targetRoi);
   const localizedName = getAssetLocalizedName(pool.brand, pool.model);
   return (
-    <details className="model-pool-card" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
-      <summary>
+    <article className={`model-pool-card${expanded ? " is-expanded" : ""}`}>
+      <header className="model-pool-card-head">
         <div className="model-pool-identity"><span>{pool.brand}</span><h3>{pool.model}</h3>{localizedName && <small>{localizedName}</small>}</div>
-        <div className="model-pool-counts"><b>{pool.heldUnits} 台持有</b><span>{pool.confirmedUnits} 已确认</span>{pool.riskUnits > 0 && <span className="risk">{pool.riskUnits} 未检测 / 风险</span>}</div>
-        <dl className="model-pool-metrics">
-          <div><dt>总持仓成本</dt><dd>{cny(pool.totalCarryingCost, 2)}</dd></div>
-          <div><dt>潜在平均成本</dt><dd>{cny(pool.averageCarryingCost, 2)}</dd></div>
-          <div><dt>单机成本区间</dt><dd>{cny(pool.minimumCarryingCost, 2)}–{cny(pool.maximumCarryingCost, 2)}</dd></div>
-          <div><dt>市场中位</dt><dd>{nullableCny(pool.latestModelMarketMedian, "未估值")}</dd></div>
-          <div><dt>估值覆盖</dt><dd>{pool.valuedUnits} / {pool.heldUnits}</dd></div>
-        </dl>
-        <div className="model-pool-economics">
-          <span><small>CONFIRMED ECONOMICS</small><b>{pool.confirmedAverageCarryingCost === null ? "暂无确认库存" : `${cny(pool.confirmedAverageCarryingCost, 2)} / 台`}</b><em>{pool.confirmedUnits} 台功能正常 / 可销售</em></span>
-          <span className={pool.riskUnits > 0 ? "potential-risk" : ""}><small>POTENTIAL ECONOMICS</small><b>{cny(pool.averageCarryingCost, 2)} / 台</b><em>{pool.heldUnits} 台{pool.riskUnits > 0 ? ` · 包含 ${pool.riskUnits} 台未检测资产` : " · 全部已确认"}</em></span>
-        </div>
-        <span className="model-pool-toggle">定价情景</span>
-      </summary>
-      <div className="model-pool-scenario">
+        <div className="model-pool-counts"><b>{pool.heldUnits} 台持有</b><span>{pool.confirmedUnits} 台已确认</span>{pool.riskUnits > 0 && <span className="risk">{pool.riskUnits} 台未检测</span>}</div>
+      </header>
+      <dl className="model-pool-metrics">
+        <div><dt>总持仓成本</dt><dd>{cny(pool.totalCarryingCost, 2)}</dd></div>
+        <div><dt>潜在平均成本</dt><dd>{cny(pool.averageCarryingCost, 2)}</dd></div>
+        <div><dt>单机成本区间</dt><dd>{cny(pool.minimumCarryingCost, 2)}–{cny(pool.maximumCarryingCost, 2)}</dd></div>
+        <div><dt>市场中位价</dt><dd>{nullableCny(pool.latestModelMarketMedian, "未估值")}</dd></div>
+      </dl>
+      <div className="model-pool-economics">
+        <span><small>已确认成本</small><b>{pool.confirmedAverageCarryingCost === null ? "暂无确认库存" : `${cny(pool.confirmedAverageCarryingCost, 2)} / 台`}</b><em>{pool.confirmedUnits} 台功能正常 / 可销售</em></span>
+        <span className={pool.riskUnits > 0 ? "potential-risk" : ""}><small>潜在成本</small><b>{cny(pool.averageCarryingCost, 2)} / 台</b><em>{pool.heldUnits} 台{pool.riskUnits > 0 ? ` · 含 ${pool.riskUnits} 台未检测` : " · 全部已确认"}</em></span>
+        <small className="model-pool-coverage">估值覆盖 {pool.valuedUnits} / {pool.heldUnits}</small>
+      </div>
+      <div className="model-pool-disclosure">
+        <div><b>定价测算</b><span>平均成交价 {cny(averageSalePrice)} · Pool Profit <strong className={performanceClass(potential.totalPoolProfit)}>{signedMoney(potential.totalPoolProfit)}</strong> · ROI <strong className={performanceClass(potential.poolRoi)}>{precisePct(potential.poolRoi)}</strong></span></div>
+        <button type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? "收起" : "展开"}<span aria-hidden="true">{expanded ? "↑" : "↓"}</span></button>
+      </div>
+      {expanded && <div className="model-pool-scenario">
         <div className="model-pool-controls">
           <NumberControl label="预计平均成交价" value={averageSalePrice} setValue={setAverageSalePrice} prefix="¥" />
           <NumberControl label="单台销售费用" value={sellingFeePerUnit} setValue={setSellingFeePerUnit} prefix="¥" />
@@ -468,17 +471,16 @@ function ModelPoolCard({ pool, defaultOpen }: { pool: ModelInventoryPool; defaul
           <span><small>预计净回款总额</small><b>{cny(potential.totalExpectedProceeds, 2)}</b></span>
           <span><small>型号池预计利润</small><b className={performanceClass(potential.totalPoolProfit)}>{signedMoney(potential.totalPoolProfit)}</b></span>
           <span><small>型号池 ROI</small><b className={performanceClass(potential.poolRoi)}>{precisePct(potential.poolRoi)}</b></span>
-          <span><small>单台平均利润</small><b className={performanceClass(potential.averageProfitPerUnit)}>{signedMoney(potential.averageProfitPerUnit)}</b></span>
+          <span><small>{number(targetRoi, 1)}% ROI 最低平均成交价</small><b>{cny(potential.requiredAverageSalePrice, 2)}</b></span>
         </div>
         <div className="model-pool-thresholds">
-          <div><span>潜在池平均保本价</span><b>{cny(potential.averageBreakEvenPrice, 2)}</b><small>按 {pool.heldUnits} 台全部持仓，含单台销售费用</small></div>
-          <div><span>{number(targetRoi, 1)}% ROI 最低平均成交价</span><b>{cny(potential.requiredAverageSalePrice, 2)}</b><small>以净回款覆盖目标回报</small></div>
-          <div><span>已确认池平均保本价</span><b>{pool.confirmedUnits ? cny(confirmed.averageBreakEvenPrice, 2) : "—"}</b><small>未检测资产不降低 confirmed 成本</small></div>
+          <span>平均保本价 <b>{cny(potential.averageBreakEvenPrice, 2)}</b></span>
+          <span>平均单机利润 <b className={performanceClass(potential.averageProfitPerUnit)}>{signedMoney(potential.averageProfitPerUnit)}</b></span>
+          <span>已确认池保本价 <b>{pool.confirmedUnits ? cny(confirmed.averageBreakEvenPrice, 2) : "—"}</b></span>
         </div>
-        {pool.riskUnits > 0 && <p className="model-pool-risk-note">潜在平均成本包含未检测资产，仅用于库存情景；不能作为已确认安全边际。</p>}
         {pool.blendedCostAdvantage !== null && pool.blendedCostAdvantage > 0 && potential.totalPoolProfit > 0 && <p className="model-pool-insight">即使高成本单机利润较低，型号成本池整体仍有利润空间；单机真实成本与实际盈亏保持独立。</p>}
-      </div>
-    </details>
+      </div>}
+    </article>
   );
 }
 
