@@ -159,6 +159,52 @@ button { color: inherit; }
 .view-all a { border-bottom: 1px solid; text-decoration: none; font-size: 9px; }
 
 .asset-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(510px, 100%), 1fr)); gap: 14px; }
+.model-pool-section { margin: 0 0 16px; }
+.model-pool-section.analysis { margin-top: 30px; }
+.model-pool-section > header { min-height: 62px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 16px; border: 1px solid var(--line); border-bottom: 0; background: var(--surface-2); }
+.model-pool-section > header h2 { margin: 5px 0 3px; font-size: 18px; letter-spacing: -.035em; }
+.model-pool-section > header div > span { color: var(--muted); font-size: 7px; }
+.model-pool-section > header label { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 7px; }
+.model-pool-section > header select { min-width: 158px; height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 0; color: var(--ink); background: var(--surface); font: 550 8px/1 var(--font-data); }
+.model-pool-list { display: grid; gap: 10px; }
+.model-pool-card { min-width: 0; border: 1px solid var(--line-dark); background: var(--surface); }
+.model-pool-card > summary { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px 24px; padding: 15px 16px 11px; cursor: pointer; list-style: none; }
+.model-pool-card > summary::-webkit-details-marker { display: none; }
+.model-pool-identity { min-width: 0; }
+.model-pool-identity > span { color: var(--muted); font: 700 7px/1 var(--font-data); letter-spacing: .12em; text-transform: uppercase; }
+.model-pool-identity h3 { margin: 6px 0 0; font-size: 19px; letter-spacing: -.035em; }
+.model-pool-identity small { display: block; margin-top: 4px; color: var(--muted); font-size: 8px; }
+.model-pool-counts { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 5px; }
+.model-pool-counts b, .model-pool-counts span { padding: 5px 7px; background: var(--surface-2); font: 600 7px/1 var(--font-data); white-space: nowrap; }
+.model-pool-counts .risk { color: #745d32; background: #f0eadc; }
+.model-pool-metrics { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; margin: 0; background: var(--line); }
+.model-pool-metrics div { min-width: 0; display: grid; gap: 6px; padding: 9px 10px; background: var(--surface-2); }
+.model-pool-metrics dt { color: var(--muted); font-size: 7px; }
+.model-pool-metrics dd { margin: 0; overflow-wrap: anywhere; font: 600 8px/1.25 var(--font-data); }
+.model-pool-economics { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.model-pool-economics > span { min-width: 0; display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 5px 10px; padding: 9px 11px; border: 1px solid var(--line); }
+.model-pool-economics small { color: var(--muted); font: 650 6px/1 var(--font-data); letter-spacing: .08em; }
+.model-pool-economics b { justify-self: end; font: 650 10px/1 var(--font-data); }
+.model-pool-economics em { grid-column: 1 / -1; color: var(--muted); font: normal 7px/1.25 var(--font-data); }
+.model-pool-economics .potential-risk { border-style: dashed; }
+.model-pool-toggle { grid-column: 1 / -1; justify-self: end; min-height: 28px; display: inline-flex; align-items: center; color: var(--muted); border-bottom: 1px solid currentColor; font-size: 7px; }
+.model-pool-toggle::after { content: " ↓"; margin-left: 7px; }
+.model-pool-card[open] .model-pool-toggle::after { content: " ↑"; }
+.model-pool-scenario { border-top: 1px solid var(--line); background: var(--surface-2); }
+.model-pool-controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 14px 16px; }
+.model-pool-controls > label { min-width: 0; display: grid; gap: 7px; color: var(--muted); font-size: 7px; }
+.model-pool-controls .number-control { min-height: 40px; background: var(--surface); }
+.model-pool-results { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); }
+.model-pool-results span { min-width: 0; min-height: 70px; display: grid; align-content: center; gap: 8px; padding: 10px 13px; background: var(--surface); }
+.model-pool-results small { color: var(--muted); font-size: 7px; }
+.model-pool-results b { overflow-wrap: anywhere; font: 650 11px/1.1 var(--font-data); }
+.model-pool-thresholds { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); }
+.model-pool-thresholds div { min-width: 0; display: grid; gap: 7px; padding: 13px 16px; border-right: 1px solid var(--line); }
+.model-pool-thresholds div:last-child { border-right: 0; }
+.model-pool-thresholds span, .model-pool-thresholds small { color: var(--muted); font-size: 7px; }
+.model-pool-thresholds b { font: 650 10px/1 var(--font-data); }
+.model-pool-risk-note, .model-pool-insight { margin: 0; padding: 10px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 7px; line-height: 1.5; }
+.model-pool-insight { color: var(--ink); background: #f3f5e6; }
 .investment-card { min-width: 0; background: var(--surface); border: 1px solid var(--line-dark); }
 .investment-card h3, .investment-card strong, .investment-card b { overflow-wrap: anywhere; }
 .investment-card > header { min-height: 91px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 19px 21px; border-bottom: 1px solid var(--line); }
@@ -680,6 +726,16 @@ button { color: inherit; }
   .value-bridge strong { font-size: 21px; }
   .section-title { min-height: 112px; padding-top: 38px; }
   .asset-card-grid { display: block; }
+  .model-pool-section > header { align-items: flex-start; flex-direction: column; }
+  .model-pool-section > header label { width: 100%; justify-content: space-between; }
+  .model-pool-section > header select { min-width: 0; width: min(240px, 70%); }
+  .model-pool-metrics { grid-template-columns: 1fr 1fr; }
+  .model-pool-metrics div:last-child { grid-column: 1 / -1; }
+  .model-pool-controls { grid-template-columns: 1fr; }
+  .model-pool-results { grid-template-columns: 1fr 1fr; }
+  .model-pool-thresholds { grid-template-columns: 1fr; }
+  .model-pool-thresholds div { border-right: 0; border-bottom: 1px solid var(--line); }
+  .model-pool-thresholds div:last-child { border-bottom: 0; }
   .investment-card { margin-bottom: 12px; }
   .card-split { grid-template-columns: 1fr; }
   .market-ledger { border-top: 1px solid var(--line); border-left: 0; }
@@ -738,6 +794,15 @@ button { color: inherit; }
   .entry-topbar { grid-template-columns: 38px 1fr; padding: 0 16px; }
   .entry-topbar > span { display: none; }
   .entry-layout { width: calc(100% - 24px); padding: 30px 0; }
+  .model-pool-card > summary { grid-template-columns: 1fr; gap: 11px; padding: 13px 12px 9px; }
+  .model-pool-counts { justify-content: flex-start; }
+  .model-pool-economics { grid-template-columns: 1fr; }
+  .model-pool-controls { padding: 12px; }
+  .model-pool-results { grid-template-columns: 1fr; }
+  .model-pool-results span { min-height: 58px; }
+  .model-pool-section > header { padding: 12px; }
+  .model-pool-section > header label { align-items: flex-start; flex-direction: column; }
+  .model-pool-section > header select { width: 100%; }
   .entry-intro dl { grid-template-columns: 1fr; }
   .entry-fields { grid-template-columns: 1fr; gap: 14px; padding: 18px; }
   .entry-fields input, .entry-fields select, .entry-fields textarea { font-size: 16px; }

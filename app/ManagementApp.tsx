@@ -8,6 +8,11 @@ import type { AssetView, DashboardData, LogisticsView, SaleView } from "../db/qu
 import { getAssetLocalizedName, getLocalizedNameFromFormalName } from "../lib/asset-display-names";
 import { allocateEstimateByWeight, estimateShipmentCost } from "../lib/logistics-benchmark";
 import { MIGRATION_PROTECTION_MESSAGE } from "../lib/migration-protection";
+import {
+  buildModelInventoryPools,
+  calculateModelPoolScenario,
+  type ModelInventoryPool,
+} from "../lib/model-inventory-pools";
 import { isJapanPostTrackingNumber } from "../lib/tracking/japan-post";
 
 type Section = "dashboard" | "assets" | "logistics" | "repairs" | "sales" | "buy-decision" | "analysis";
@@ -43,7 +48,9 @@ const number = (value: number, digits = 1) => new Intl.NumberFormat("zh-CN", { m
 const grams = (value: number | null) => value !== null && value > 0 ? `${number(value)} g` : "—";
 const kilograms = (value: number | null) => value !== null && value > 0 ? `${number(value / 1000, 3)} kg` : "—";
 const signed = (value: number | null) => value === null ? "—" : `${value >= 0 ? "+" : "−"}${cny(Math.abs(value))}`;
+const signedMoney = (value: number | null, digits = 2) => value === null ? "—" : `${value >= 0 ? "+" : "−"}${cny(Math.abs(value), digits)}`;
 const pct = (value: number | null) => value === null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+const precisePct = (value: number | null) => value === null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 const performanceClass = (value: number | null) => value === null ? "" : value >= 0 ? "gain" : "loss";
 const sampleCount = (value: number | null) => value === null ? "样本未记录" : `${value} 条`;
 const date = (value: string | null) => value
@@ -399,11 +406,90 @@ function AssetsView({ data, canCreateAsset, open }: { data: DashboardData; canCr
         <div className="position-summary"><span>持有中 <b>{data.assets.filter((asset) => asset.lifecycleStatus !== "已出售").length}</b></span><span>待检测 <b>{data.assets.filter((asset) => asset.repairStatus === "未检测").length}</b></span><span>可出售 <b>{data.assets.filter((asset) => asset.lifecycleStatus === "可出售").length}</b></span></div>
         {canCreateAsset && <Link className="primary-action" href="/assets/new">＋ 新增相机</Link>}
       </div>
+      <ModelInventoryPools assets={data.assets} mode="assets" />
       <div className="asset-card-grid wide">
         {data.assets.map((asset) => <InvestmentCard asset={asset} sale={data.sales.find((record) => record.cameraId === asset.id)} open={open} readOnly={data.migrationReadOnly} key={asset.id} />)}
       </div>
     </>
   );
+}
+
+type ModelPoolSort = "advantage" | "capital" | "profit" | "units";
+
+function ModelInventoryPools({ assets, mode }: { assets: AssetView[]; mode: "assets" | "analysis" }) {
+  const pools = buildModelInventoryPools(assets);
+  const [sortBy, setSortBy] = useState<ModelPoolSort>("advantage");
+  if (!pools.length) return null;
+  const sortedPools = [...pools].sort((a, b) => modelPoolSortValue(b, sortBy) - modelPoolSortValue(a, sortBy));
+  return (
+    <section className={`model-pool-section ${mode}`}>
+      <header>
+        <div><p className="eyebrow">MODEL INVENTORY POOL</p><h2>同型号持仓</h2><span>独立成本不变；这里只聚合同型号 held assets 的经营与定价空间。</span></div>
+        {mode === "analysis" && <label><span>排序</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value as ModelPoolSort)}><option value="advantage">混合成本优势</option><option value="capital">资金占用</option><option value="profit">市场中位预测利润</option><option value="units">持有数量</option></select></label>}
+      </header>
+      <div className="model-pool-list">{sortedPools.map((pool) => <ModelPoolCard key={pool.key} pool={pool} defaultOpen={mode === "analysis"} />)}</div>
+    </section>
+  );
+}
+
+function ModelPoolCard({ pool, defaultOpen }: { pool: ModelInventoryPool; defaultOpen: boolean }) {
+  const [expanded, setExpanded] = useState(defaultOpen);
+  const [averageSalePrice, setAverageSalePrice] = useState(Math.round(pool.latestModelMarketMedian ?? pool.averageCarryingCost));
+  const [sellingFeePerUnit, setSellingFeePerUnit] = useState(0);
+  const [targetRoi, setTargetRoi] = useState(20);
+  const potential = calculateModelPoolScenario(pool.totalCarryingCost, pool.heldUnits, averageSalePrice, sellingFeePerUnit, targetRoi);
+  const confirmed = calculateModelPoolScenario(pool.confirmedCarryingCost, pool.confirmedUnits, averageSalePrice, sellingFeePerUnit, targetRoi);
+  const localizedName = getAssetLocalizedName(pool.brand, pool.model);
+  return (
+    <details className="model-pool-card" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+      <summary>
+        <div className="model-pool-identity"><span>{pool.brand}</span><h3>{pool.model}</h3>{localizedName && <small>{localizedName}</small>}</div>
+        <div className="model-pool-counts"><b>{pool.heldUnits} 台持有</b><span>{pool.confirmedUnits} 已确认</span>{pool.riskUnits > 0 && <span className="risk">{pool.riskUnits} 未检测 / 风险</span>}</div>
+        <dl className="model-pool-metrics">
+          <div><dt>总持仓成本</dt><dd>{cny(pool.totalCarryingCost, 2)}</dd></div>
+          <div><dt>潜在平均成本</dt><dd>{cny(pool.averageCarryingCost, 2)}</dd></div>
+          <div><dt>单机成本区间</dt><dd>{cny(pool.minimumCarryingCost, 2)}–{cny(pool.maximumCarryingCost, 2)}</dd></div>
+          <div><dt>市场中位</dt><dd>{nullableCny(pool.latestModelMarketMedian, "未估值")}</dd></div>
+          <div><dt>估值覆盖</dt><dd>{pool.valuedUnits} / {pool.heldUnits}</dd></div>
+        </dl>
+        <div className="model-pool-economics">
+          <span><small>CONFIRMED ECONOMICS</small><b>{pool.confirmedAverageCarryingCost === null ? "暂无确认库存" : `${cny(pool.confirmedAverageCarryingCost, 2)} / 台`}</b><em>{pool.confirmedUnits} 台功能正常 / 可销售</em></span>
+          <span className={pool.riskUnits > 0 ? "potential-risk" : ""}><small>POTENTIAL ECONOMICS</small><b>{cny(pool.averageCarryingCost, 2)} / 台</b><em>{pool.heldUnits} 台{pool.riskUnits > 0 ? ` · 包含 ${pool.riskUnits} 台未检测资产` : " · 全部已确认"}</em></span>
+        </div>
+        <span className="model-pool-toggle">定价情景</span>
+      </summary>
+      <div className="model-pool-scenario">
+        <div className="model-pool-controls">
+          <NumberControl label="预计平均成交价" value={averageSalePrice} setValue={setAverageSalePrice} prefix="¥" />
+          <NumberControl label="单台销售费用" value={sellingFeePerUnit} setValue={setSellingFeePerUnit} prefix="¥" />
+          <NumberControl label="目标 ROI" value={targetRoi} setValue={setTargetRoi} suffix="%" />
+        </div>
+        <div className="model-pool-results">
+          <span><small>预计净回款总额</small><b>{cny(potential.totalExpectedProceeds, 2)}</b></span>
+          <span><small>型号池预计利润</small><b className={performanceClass(potential.totalPoolProfit)}>{signedMoney(potential.totalPoolProfit)}</b></span>
+          <span><small>型号池 ROI</small><b className={performanceClass(potential.poolRoi)}>{precisePct(potential.poolRoi)}</b></span>
+          <span><small>单台平均利润</small><b className={performanceClass(potential.averageProfitPerUnit)}>{signedMoney(potential.averageProfitPerUnit)}</b></span>
+        </div>
+        <div className="model-pool-thresholds">
+          <div><span>潜在池平均保本价</span><b>{cny(potential.averageBreakEvenPrice, 2)}</b><small>按 {pool.heldUnits} 台全部持仓，含单台销售费用</small></div>
+          <div><span>{number(targetRoi, 1)}% ROI 最低平均成交价</span><b>{cny(potential.requiredAverageSalePrice, 2)}</b><small>以净回款覆盖目标回报</small></div>
+          <div><span>已确认池平均保本价</span><b>{pool.confirmedUnits ? cny(confirmed.averageBreakEvenPrice, 2) : "—"}</b><small>未检测资产不降低 confirmed 成本</small></div>
+        </div>
+        {pool.riskUnits > 0 && <p className="model-pool-risk-note">潜在平均成本包含未检测资产，仅用于库存情景；不能作为已确认安全边际。</p>}
+        {pool.blendedCostAdvantage !== null && pool.blendedCostAdvantage > 0 && potential.totalPoolProfit > 0 && <p className="model-pool-insight">即使高成本单机利润较低，型号成本池整体仍有利润空间；单机真实成本与实际盈亏保持独立。</p>}
+      </div>
+    </details>
+  );
+}
+
+function modelPoolSortValue(pool: ModelInventoryPool, sortBy: ModelPoolSort) {
+  if (sortBy === "capital") return pool.totalCarryingCost;
+  if (sortBy === "units") return pool.heldUnits;
+  if (sortBy === "profit") {
+    const salePrice = pool.latestModelMarketMedian ?? pool.averageCarryingCost;
+    return calculateModelPoolScenario(pool.totalCarryingCost, pool.heldUnits, salePrice, 0, 0).totalPoolProfit;
+  }
+  return pool.blendedCostAdvantage ?? Number.NEGATIVE_INFINITY;
 }
 
 function InvestmentCard({ asset, sale, open, readOnly }: { asset: AssetView; sale?: SaleView; open: (kind: Exclude<ModalKind, null>, id?: string) => void; readOnly: boolean }) {
@@ -711,6 +797,7 @@ function AnalysisView({ data }: { data: DashboardData }) {
         <Metric label="估值覆盖" value={`${data.summary.valuedAssetCount} / ${data.summary.heldAssetCount}`} note={data.summary.valuationCoverageComplete ? "当前持仓全部已估值" : "部分持仓尚未估值"} compact />
         <Metric label="资产生命周期" value={`${data.summary.heldAssetCount} / ${data.summary.soldAssetCount}`} note="持有 / 已售" compact />
       </section>
+      <ModelInventoryPools assets={data.assets} mode="analysis" />
       <SectionTitle kicker="ASSET PERFORMANCE" title="单机表现" />
       <div className="performance-ledger">{performance.map((item) => { const localizedName = getAssetLocalizedName(item.asset.brand, item.asset.model); return <article key={item.asset.id}><header><div><span>{item.asset.brand}</span><h3>{item.asset.model}</h3>{localizedName && <small>{localizedName}</small>}</div><b className={item.sold ? "sold" : "held"}>{item.asset.lifecycleStatus}</b></header><dl><div><dt>成本基数</dt><dd>{cny(item.asset.trueCost)}</dd></div><div><dt>{item.sold ? "净回款" : "当前估值"}</dt><dd>{nullableCny(item.value, item.sold ? "未记录" : "未估值")}</dd></div><div><dt>{item.sold ? "已实现盈亏" : "未实现盈亏"}</dt><dd className={performanceClass(item.profit)}>{signed(item.profit)}</dd></div><div><dt>{item.sold ? "已实现 ROI" : "未实现 ROI"}</dt><dd className={performanceClass(item.roi)}>{pct(item.roi)}</dd></div><div><dt>持有周期</dt><dd>{item.holdingDays} 天</dd></div></dl></article>; })}</div>
       <SectionTitle kicker="RANKINGS" title="组合排名" />
