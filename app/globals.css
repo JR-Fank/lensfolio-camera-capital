@@ -236,6 +236,9 @@ button { color: inherit; }
 .logistics-benchmark > header label { display: grid; gap: 7px; color: var(--muted); font-size: 7px; }
 .logistics-benchmark > header select { min-width: 180px; height: 38px; padding: 0 10px; border: 1px solid var(--line-dark); background: white; font-size: 9px; }
 .benchmark-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; padding: 1px; background: var(--ink); }
+.external-reference-flag { display: flex; align-items: center; gap: 12px; padding: 10px 24px; border-bottom: 1px solid var(--line); background: #f5f4ef; }
+.external-reference-flag b { padding: 5px 7px; color: white; background: var(--ink); font-size: 7px; }
+.external-reference-flag span { color: var(--muted); font-size: 7px; }
 .shipment-estimator { display: grid; grid-template-columns: 1.15fr .85fr; gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
 .estimator-inputs { display: grid; grid-template-columns: 1fr 1.4fr; gap: 14px; padding: 22px 24px; background: var(--surface); }
 .estimator-inputs label { min-width: 0; display: grid; gap: 8px; color: var(--muted); font-size: 7px; }
@@ -243,6 +246,7 @@ button { color: inherit; }
 .estimator-inputs input { min-width: 0; height: 42px; padding: 0 11px; border: 1px solid var(--line-dark); border-radius: 0; background: white; font: 550 10px/1 var(--font-data); }
 .estimator-inputs label > div input { border: 0; }
 .estimator-inputs label > div b { padding-right: 11px; color: var(--muted); font: 600 8px/1 var(--font-data); }
+.estimator-inputs label > small { color: var(--muted); font: 7px/1.4 var(--font-data); }
 .estimator-output { display: flex; flex-direction: column; justify-content: center; padding: 20px 24px; color: white; background: var(--ink); }
 .estimator-output > span { color: #9ca39d; font-size: 7px; }
 .estimator-output > strong { margin: 11px 0 8px; color: var(--acid); font: 650 28px/1 var(--font-data); letter-spacing: -.05em; }
@@ -250,6 +254,10 @@ button { color: inherit; }
 .estimate-allocation { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 13px 24px; background: var(--surface-2); }
 .estimate-allocation span { color: var(--muted); font-size: 7px; }
 .estimate-allocation b { font: 550 7px/1 var(--font-data); }
+.service-comparison { display: grid; grid-template-columns: auto auto auto 1fr; align-items: center; gap: 10px 18px; padding: 13px 24px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.service-comparison span { color: var(--muted); font-size: 7px; }
+.service-comparison b { font: 600 8px/1 var(--font-data); }
+.service-comparison small { color: var(--muted); font: 7px/1.45 var(--font-data); }
 .logistics-benchmark > footer { padding: 12px 24px; color: var(--muted); border-top: 1px solid var(--line); font: 7px/1.4 var(--font-data); }
 
 .shipment-stack { display: grid; gap: 14px; margin-top: 14px; }
@@ -665,6 +673,8 @@ button { color: inherit; }
   .logistics-benchmark > header { align-items: flex-start; flex-direction: column; }
   .benchmark-metrics { grid-template-columns: 1fr 1fr; }
   .shipment-estimator { grid-template-columns: 1fr; }
+  .service-comparison { grid-template-columns: 1fr 1fr; }
+  .service-comparison span, .service-comparison small { grid-column: 1 / -1; }
   .shipment-card > header { align-items: flex-start; flex-direction: column; }
   .shipment-state { text-align: left; }
   .shipment-facts { grid-template-columns: 1fr 1fr; }
@@ -722,6 +732,9 @@ button { color: inherit; }
   .allocation-ledger > div small { display: none; }
   .allocation-ledger .allocation-amount small { display: block; }
   .benchmark-metrics, .estimator-inputs { grid-template-columns: 1fr; }
+  .external-reference-flag { align-items: flex-start; flex-direction: column; }
+  .service-comparison { grid-template-columns: 1fr; }
+  .service-comparison span, .service-comparison small { grid-column: auto; }
   .analysis-metrics { grid-template-columns: 1fr; }
   .decision-control-grid.three, .decision-control-grid.costs { grid-template-columns: 1fr; }
   .decision-workbench .decision-intro, .decision-fieldset { padding: 24px 18px; }

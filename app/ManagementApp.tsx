@@ -468,11 +468,21 @@ function InvestmentCard({ asset, sale, open, readOnly }: { asset: AssetView; sal
 
 function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracking }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>) => void; refreshTracking: (order: LogisticsView) => void; busy: boolean; canRefreshTracking: boolean }) {
   const benchmarks = data.logisticsBenchmarks ?? [];
-  const [selectedCarrier, setSelectedCarrier] = useState(benchmarks[0]?.carrierService ?? "");
-  const [estimatedWeightG, setEstimatedWeightG] = useState(1000);
+  const benchmarkKey = (item: (typeof benchmarks)[number]) => `${item.scope}:${item.carrierService}`;
+  const [selectedCarrier, setSelectedCarrier] = useState(benchmarks[0] ? benchmarkKey(benchmarks[0]) : "");
+  const [estimatedWeightG, setEstimatedWeightG] = useState(600);
   const [bundleWeightText, setBundleWeightText] = useState("");
-  const benchmark = benchmarks.find((item) => item.carrierService === selectedCarrier) ?? benchmarks[0];
+  const benchmark = benchmarks.find((item) => benchmarkKey(item) === selectedCarrier) ?? benchmarks[0];
   const estimatedCost = benchmark ? estimateShipmentCost(benchmark, estimatedWeightG) : null;
+  const externalAirPacket = benchmarks.find((item) => item.scope === "external_private" && item.carrierService.includes("AIR Packet"));
+  const portfolioEms = benchmarks.find((item) => item.scope === "portfolio_actual" && item.carrierService.includes("EMS"));
+  const airPacketAt600 = externalAirPacket ? estimateShipmentCost(externalAirPacket, 600) : null;
+  const emsAt600 = portfolioEms ? estimateShipmentCost(portfolioEms, 600) : null;
+  const t2ReferenceWeight = data.assets.find((asset) =>
+    asset.brand.toLowerCase() === "contax"
+    && asset.model.toLowerCase().startsWith("t2")
+    && asset.weightG > 0
+  )?.weightG ?? null;
   const bundleWeights = bundleWeightText
     .split(/[,，\s]+/)
     .map(Number)
@@ -486,8 +496,9 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
       {benchmark ? <section className="logistics-benchmark" aria-label="物流经验参考">
         <header>
           <div><p className="eyebrow">COST BENCHMARK</p><h2>物流经验参考</h2><p>基于 Lensfolio 历史实际物流成本的经验估算，不是承运商官方运价。</p></div>
-          {benchmarks.length > 1 ? <label><span>承运服务</span><select value={benchmark.carrierService} onChange={(event) => setSelectedCarrier(event.target.value)}>{benchmarks.map((item) => <option key={item.carrierService}>{item.carrierService}</option>)}</select></label> : <b>{benchmark.carrierService}</b>}
+          {benchmarks.length > 1 ? <label><span>承运服务</span><select value={benchmarkKey(benchmark)} onChange={(event) => setSelectedCarrier(event.target.value)}>{benchmarks.map((item) => <option key={benchmarkKey(item)} value={benchmarkKey(item)}>{item.carrierService}{item.scope === "external_private" ? " · 外部私人参考" : ""}</option>)}</select></label> : <b>{benchmark.carrierService}</b>}
         </header>
+        {benchmark.scope === "external_private" && <div className="external-reference-flag"><b>外部私人参考样本</b><span>不属于 Lensfolio 投资持仓，不计入资产、成本、ROI 或估值覆盖。</span></div>}
         <div className="benchmark-metrics">
           <Metric label="已结算样本" value={`${benchmark.sampleCount} 批`} note={benchmark.confidenceLabel} compact />
           <Metric label="平均实际运费" value={cny(benchmark.averageActualCostCny, 2)} note={`${cny(benchmark.minimumActualCostCny)}–${cny(benchmark.maximumActualCostCny)}`} compact />
@@ -496,7 +507,7 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
         </div>
         <div className="shipment-estimator">
           <div className="estimator-inputs">
-            <label><span>预计计费重量</span><div><input type="number" min="1" step="10" inputMode="decimal" value={estimatedWeightG} onChange={(event) => setEstimatedWeightG(Math.max(0, Number(event.target.value)))} /><b>g</b></div></label>
+            <label><span>预计计费重量</span><div><input type="number" min="1" step="10" inputMode="decimal" value={estimatedWeightG} onChange={(event) => setEstimatedWeightG(Math.max(0, Number(event.target.value)))} /><b>g</b></div>{t2ReferenceWeight && <small>同系 Contax T2 实测参考约 {t2ReferenceWeight}g，仅用于估算</small>}</label>
             <label><span>多资产分摊重量（可选）</span><input type="text" inputMode="decimal" value={bundleWeightText} onChange={(event) => setBundleWeightText(event.target.value)} placeholder="例如 551, 603" /></label>
           </div>
           <div className="estimator-output">
@@ -505,6 +516,7 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
           </div>
           {bundleAllocations.length > 0 && <div className="estimate-allocation"><span>按资产重量占比分摊预计总额</span>{bundleAllocations.map((allocation, index) => <b key={`${allocation.weightG}-${index}`}>资产 {index + 1} · {allocation.weightG}g · {cny(allocation.amountCny, 2)}</b>)}</div>}
         </div>
+        {airPacketAt600 !== null && emsAt600 !== null && <div className="service-comparison"><span>600g 当前样本对比</span><b>AIR Packet 外部参考约 {cny(airPacketAt600, 2)}</b><b>EMS 历史估算约 {cny(emsAt600, 2)}</b><small>AIR Packet 当前样本约低 {cny(emsAt600 - airPacketAt600, 2)} / {number((emsAt600 - airPacketAt600) / emsAt600 * 100, 1)}%。仅比较成本；缺少完整签收证据，不能比较速度。成本优先可参考 AIR Packet，追踪、时效与风险优先可参考 EMS。</small></div>}
         <footer>{benchmark.modelKind === "linear" ? `经验模型：${cny(benchmark.fixedComponentCny, 2)} 固定项 + ${cny(benchmark.variablePerKgCny, 2)}/kg` : `样本不足，使用历史中位数 ${cny(benchmark.medianActualCostCny, 2)}`}</footer>
       </section> : <p className="panel-empty">尚无可用于估算的已结算物流样本。</p>}
       <div className="shipment-stack">

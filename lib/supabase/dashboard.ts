@@ -229,11 +229,20 @@ type LogisticsPurchaseOrderRow = {
   ordered_at: string;
 };
 
+type LogisticsReferenceRow = {
+  carrier: string;
+  service: string;
+  chargeable_weight_g: number;
+  net_cost_cny: number | string;
+  carrier_posted_at: string | null;
+  carrier_delivered_at: string | null;
+};
+
 export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> => {
   const dashboard = await getSupabaseDashboardData();
   const { supabase, portfolioId } = await sessionPortfolio();
 
-  const [shipmentsResult, itemsResult, costsResult, eventsResult, syncRunsResult, purchaseItemsResult, purchaseOrdersResult] = await Promise.all([
+  const [shipmentsResult, itemsResult, costsResult, eventsResult, syncRunsResult, purchaseItemsResult, purchaseOrdersResult, referencesResult] = await Promise.all([
     supabase
       .from("shipments")
       .select("id,legacy_id,carrier,tracking_number,status,shipped_at,delivered_at,actual_paid_cny,budget_cny,origin,destination,bare_weight_g,chargeable_weight_g,legacy_status,created_at")
@@ -269,6 +278,11 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       .from("purchase_orders")
       .select("id,ordered_at")
       .eq("portfolio_id", portfolioId),
+    supabase
+      .from("logistics_reference_samples")
+      .select("carrier,service,chargeable_weight_g,net_cost_cny,carrier_posted_at,carrier_delivered_at")
+      .eq("portfolio_id", portfolioId)
+      .eq("reference_scope", "external_private"),
   ]);
 
   const shipments = rows<ShipmentRow>("shipments", shipmentsResult);
@@ -278,6 +292,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
   const syncRuns = rows<TrackingSyncRunRow>("tracking sync runs", syncRunsResult);
   const purchaseItems = rows<LogisticsPurchaseItemRow>("shipment purchase items", purchaseItemsResult);
   const purchaseOrders = rows<LogisticsPurchaseOrderRow>("shipment purchase orders", purchaseOrdersResult);
+  const referenceSamples = rows<LogisticsReferenceRow>("external logistics references", referencesResult);
 
   const assetNameById = new Map(
     dashboard.assets.map((asset) => [asset.id, `${asset.brand} ${asset.model}`])
@@ -347,11 +362,25 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
 
     return [{
       carrierService,
+      scope: "portfolio_actual" as const,
       chargeableWeightG: weightG,
       actualCostCny: postedCost,
       completedTransitDays,
     }];
   });
+  benchmarkSamples.push(...referenceSamples.map((sample) => ({
+    carrierService: `${sample.carrier.trim()} ${sample.service.trim()}`,
+    scope: "external_private" as const,
+    chargeableWeightG: sample.chargeable_weight_g,
+    actualCostCny: money(sample.net_cost_cny),
+    completedTransitDays: sample.carrier_posted_at && sample.carrier_delivered_at
+      ? Math.max(
+          0,
+          (new Date(sample.carrier_delivered_at).getTime() - new Date(sample.carrier_posted_at).getTime())
+            / 86_400_000,
+        )
+      : null,
+  })));
 
   const logisticsRecords = shipments.map((shipment) => {
     const shipmentItems = itemsByShipment.get(shipment.id) ?? [];

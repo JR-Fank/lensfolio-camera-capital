@@ -1,5 +1,6 @@
 export type LogisticsCostSample = {
   carrierService: string;
+  scope: "portfolio_actual" | "external_private";
   chargeableWeightG: number;
   actualCostCny: number;
   completedTransitDays: number | null;
@@ -7,6 +8,7 @@ export type LogisticsCostSample = {
 
 export type LogisticsBenchmark = {
   carrierService: string;
+  scope: "portfolio_actual" | "external_private";
   sampleCount: number;
   averageActualCostCny: number;
   weightedCostPerKgCny: number;
@@ -14,7 +16,7 @@ export type LogisticsBenchmark = {
   maximumActualCostCny: number;
   completedTransitSampleCount: number;
   typicalTransitDays: number | null;
-  confidenceLabel: "样本较少" | "中等" | "较高";
+  confidenceLabel: "极低" | "样本较少" | "中等" | "较高";
   modelKind: "linear" | "median";
   fixedComponentCny: number;
   variablePerKgCny: number;
@@ -32,18 +34,21 @@ function median(values: number[]) {
 function confidence(sampleCount: number): LogisticsBenchmark["confidenceLabel"] {
   if (sampleCount >= 8) return "较高";
   if (sampleCount >= 5) return "中等";
+  if (sampleCount === 1) return "极低";
   return "样本较少";
 }
 
 export function buildLogisticsBenchmarks(samples: LogisticsCostSample[]): LogisticsBenchmark[] {
   const groups = new Map<string, LogisticsCostSample[]>();
   for (const sample of samples) {
-    const key = sample.carrierService.trim();
-    if (!key || sample.chargeableWeightG <= 0 || sample.actualCostCny <= 0) continue;
+    const carrierService = sample.carrierService.trim();
+    if (!carrierService || sample.chargeableWeightG <= 0 || sample.actualCostCny <= 0) continue;
+    const key = `${sample.scope}:${carrierService}`;
     groups.set(key, [...(groups.get(key) ?? []), sample]);
   }
 
-  return [...groups].map(([carrierService, group]) => {
+  return [...groups].map(([, group]) => {
+    const { carrierService, scope } = group[0];
     const weightsKg = group.map((sample) => sample.chargeableWeightG / 1000);
     const costs = group.map((sample) => sample.actualCostCny);
     const averageWeight = weightsKg.reduce((sum, value) => sum + value, 0) / group.length;
@@ -63,6 +68,7 @@ export function buildLogisticsBenchmarks(samples: LogisticsCostSample[]): Logist
 
     return {
       carrierService,
+      scope,
       sampleCount: group.length,
       averageActualCostCny: averageCost,
       weightedCostPerKgCny:
@@ -78,7 +84,10 @@ export function buildLogisticsBenchmarks(samples: LogisticsCostSample[]): Logist
       variablePerKgCny: useLinearModel ? slope : 0,
       medianActualCostCny: median(costs),
     } satisfies LogisticsBenchmark;
-  }).sort((a, b) => a.carrierService.localeCompare(b.carrierService));
+  }).sort((a, b) =>
+    (a.scope === b.scope ? 0 : a.scope === "portfolio_actual" ? -1 : 1)
+    || a.carrierService.localeCompare(b.carrierService)
+  );
 }
 
 export function estimateShipmentCost(benchmark: LogisticsBenchmark, chargeableWeightG: number) {
