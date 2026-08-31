@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import type { AssetView, DashboardData, LogisticsView, SaleView, ValuationHistoryView } from "../../db/queries";
+import { calculateHoldingDays } from "../holding-days";
 import { projectAssetValuation, projectPortfolioValuation } from "../valuation-semantics";
 import { createClient } from "./server";
 
@@ -63,6 +64,7 @@ type AssetBuildContext = {
   purchaseItemByAsset: Map<string, PurchaseItemRow>;
   purchaseOrderById: Map<string, PurchaseOrderRow>;
   noteByAsset: Map<string, string>;
+  soldAtByAsset: Map<string, string>;
 };
 
 const assetSelect = "id,portfolio_id,legacy_id,brand,model,serial_number,condition,operational_status,repair_status,acquired_at,measured_weight_g";
@@ -106,6 +108,7 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
   const metrics = row<PortfolioMetricsRow>("portfolio metrics", metricsResult);
   const assetRows = rows<AssetRow>("assets", assetsResult);
   const valuationRows = rows<ValuationRow>("valuation snapshots", valuationsResult);
+  const saleRows = rows<SaleRow>("sales", salesResult);
   const context = buildContext({
     financials: rows<FinancialRow>("asset financials", financialsResult),
     pendingEntries: rows<CostEntryRow>("pending shipping", pendingResult),
@@ -114,9 +117,10 @@ export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> =
     purchaseItems: rows<PurchaseItemRow>("purchase items", purchaseItemsResult),
     purchaseOrders: rows<PurchaseOrderRow>("purchase orders", purchaseOrdersResult),
     statusEvents: rows<StatusEventRow>("asset status notes", statusEventsResult),
+    sales: saleRows,
   });
   const assets = assetRows.map((asset) => buildAsset(asset, context));
-  const sales = buildSales(rows<SaleRow>("sales", salesResult), assetRows, context.financialByAsset);
+  const sales = buildSales(saleRows, assetRows, context.financialByAsset);
   const pendingShipping = sum(context.pendingByAsset.values());
   const postedCarryingCost = money(metrics.total_carrying_cost_cny);
   const valuationMetrics = projectPortfolioValuation(metrics);
@@ -183,11 +187,17 @@ type ShipmentRow = {
 };
 
 type ShipmentItemRow = {
+  id: string;
   shipment_id: string;
   asset_id: string;
   weight_snapshot_g: number | null;
   allocation_method: string;
   allocated_shipping_cny: number | string;
+};
+
+type ShipmentCostRow = {
+  source_id: string | null;
+  amount_cny: number | string;
 };
 
 type TrackingEventRow = {
@@ -212,7 +222,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
   const dashboard = await getSupabaseDashboardData();
   const { supabase, portfolioId } = await sessionPortfolio();
 
-  const [shipmentsResult, itemsResult, eventsResult, syncRunsResult, assetsResult] = await Promise.all([
+  const [shipmentsResult, itemsResult, costsResult, eventsResult, syncRunsResult, assetsResult] = await Promise.all([
     supabase
       .from("shipments")
       .select("id,legacy_id,carrier,tracking_number,status,shipped_at,delivered_at,actual_paid_cny,budget_cny,origin,destination,bare_weight_g,chargeable_weight_g,legacy_status,updated_at")
@@ -220,8 +230,15 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       .order("created_at", { ascending: true }),
     supabase
       .from("shipment_items")
-      .select("shipment_id,asset_id,weight_snapshot_g,allocation_method,allocated_shipping_cny")
+      .select("id,shipment_id,asset_id,weight_snapshot_g,allocation_method,allocated_shipping_cny")
       .eq("portfolio_id", portfolioId),
+    supabase
+      .from("cost_entries")
+      .select("source_id,amount_cny")
+      .eq("portfolio_id", portfolioId)
+      .eq("source_type", "shipment_item")
+      .eq("cost_type", "international_shipping")
+      .eq("entry_status", "posted"),
     supabase
       .from("tracking_events")
       .select("id,shipment_id,status,description,location,occurred_at,recorded_at,raw_status")
@@ -241,12 +258,16 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
 
   const shipments = rows<ShipmentRow>("shipments", shipmentsResult);
   const items = rows<ShipmentItemRow>("shipment items", itemsResult);
+  const costs = rows<ShipmentCostRow>("posted shipment costs", costsResult);
   const events = rows<TrackingEventRow>("tracking events", eventsResult);
   const syncRuns = rows<TrackingSyncRunRow>("tracking sync runs", syncRunsResult);
   const assets = rows<{ id: string; brand: string; model: string }>("shipment assets", assetsResult);
 
   const assetNameById = new Map(
     assets.map((asset) => [asset.id, `${asset.brand} ${asset.model}`])
+  );
+  const postedCostByItemId = new Map(
+    costs.flatMap((cost) => cost.source_id ? [[cost.source_id, money(cost.amount_cny)] as const] : []),
   );
 
   const itemsByShipment = new Map<string, ShipmentItemRow[]>();
@@ -281,13 +302,19 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
     const bareWeightG = nullableWhole(shipment.bare_weight_g);
     const chargeableWeightG = nullableWhole(shipment.chargeable_weight_g);
 
-    const allocations = shipmentItems.map((item) => ({
-      logisticsOrderId: shipment.id,
-      cameraId: item.asset_id,
-      cameraName: assetNameById.get(item.asset_id) ?? "Unknown asset",
-      weightG: nullableWhole(item.weight_snapshot_g),
-      allocatedShippingCny: money(item.allocated_shipping_cny),
-    }));
+    const allocations = shipmentItems.map((item) => {
+      const budgetAllocation = money(item.allocated_shipping_cny);
+      const actualAllocation = postedCostByItemId.get(item.id) ?? null;
+      return {
+        logisticsOrderId: shipment.id,
+        cameraId: item.asset_id,
+        cameraName: assetNameById.get(item.asset_id) ?? "Unknown asset",
+        weightG: nullableWhole(item.weight_snapshot_g),
+        allocatedShippingCny: actualAllocation ?? budgetAllocation,
+        actualAllocatedShippingCny: actualAllocation,
+        budgetAllocatedShippingCny: budgetAllocation,
+      };
+    });
     const cameraNames = allocations.map((item) => item.cameraName).join(" · ");
 
     const mappedEvents = shipmentEvents.map((event) => ({
@@ -331,9 +358,8 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       trackingNumber: shipment.tracking_number,
       origin: shipment.origin ?? "未记录",
       destination: shipment.destination ?? "未记录",
-      status: shipmentStatus(shipment.status),
+      status: shipmentPresentationStatus(shipment.status, latest),
       latestEvent:
-        latest?.raw_status ??
         latest?.status ??
         shipment.legacy_status ??
         null,
@@ -389,6 +415,16 @@ function shipmentStatus(value: string) {
   } as Record<string, string>)[value] ?? value;
 }
 
+function shipmentPresentationStatus(value: string, latest: TrackingEventRow | undefined) {
+  if (
+    value === "in_transit"
+    && latest?.raw_status === "Item arrival at collection point for pick-up"
+  ) {
+    return "香港领取点待取";
+  }
+  return shipmentStatus(value);
+}
+
 function allocationMethod(value: string | undefined) {
   return ({
     equal: "平均分摊",
@@ -436,6 +472,7 @@ export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise
   const purchaseOrdersResult = purchaseOrderId
     ? await supabase.from("purchase_orders").select(purchaseOrderSelect).eq("portfolio_id", portfolioId).eq("id", purchaseOrderId)
     : { data: [], error: null };
+  const saleRows = rows<SaleRow>("asset sales", salesResult);
   const context = buildContext({
     financials: [financial],
     pendingEntries: rows<CostEntryRow>("asset pending shipping", pendingResult),
@@ -444,9 +481,10 @@ export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise
     purchaseItems,
     purchaseOrders: rows<PurchaseOrderRow>("asset purchase order", purchaseOrdersResult),
     statusEvents: rows<StatusEventRow>("asset status notes", statusEventsResult),
+    sales: saleRows,
   });
   const assetView = buildAsset(asset, context);
-  const sales = buildSales(rows<SaleRow>("asset sales", salesResult), [asset], context.financialByAsset);
+  const sales = buildSales(saleRows, [asset], context.financialByAsset);
   const pendingShipping = assetView.pendingShippingCny ?? 0;
 
   return {
@@ -486,7 +524,7 @@ export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise
 function buildContext(input: {
   financials: FinancialRow[]; pendingEntries: CostEntryRow[]; valuations: ValuationRow[];
   sources: MarketSourceRow[]; purchaseItems: PurchaseItemRow[]; purchaseOrders: PurchaseOrderRow[];
-  statusEvents: StatusEventRow[];
+  statusEvents: StatusEventRow[]; sales: SaleRow[];
 }): AssetBuildContext {
   const valuationByAsset = new Map<string, ValuationRow>();
   for (const valuation of input.valuations) {
@@ -508,6 +546,11 @@ function buildContext(input: {
     purchaseItemByAsset: new Map(input.purchaseItems.map((value) => [value.asset_id, value])),
     purchaseOrderById: new Map(input.purchaseOrders.map((value) => [value.id, value])),
     noteByAsset,
+    soldAtByAsset: new Map(
+      input.sales.flatMap((sale) => sale.status === "sold" && sale.sold_at
+        ? [[sale.asset_id, sale.sold_at] as const]
+        : []),
+    ),
   };
 }
 
@@ -551,7 +594,7 @@ function buildAsset(asset: AssetRow, context: AssetBuildContext): AssetView {
     normalProfit: projectedValuation.unrealizedProfit,
     optimisticProfit: projectedValuation.high === null ? null : projectedValuation.high - postedCost,
     roi: projectedValuation.roi,
-    holdingDays: holdingDays(asset.acquired_at),
+    holdingDays: calculateHoldingDays(asset.acquired_at, context.soldAtByAsset.get(asset.id) ?? null),
   };
 }
 
@@ -594,7 +637,7 @@ function buildSales(sales: SaleRow[], assets: AssetRow[], financialByAsset: Map<
       carryingCostCny: money(financial?.total_carrying_cost_cny),
       finalProfit: money(financial?.realized_profit_cny),
       realizedRoi: nullablePercentage(financial?.investment_roi),
-      holdingDays: daysBetween(asset?.acquired_at ?? null, sale.sold_at),
+      holdingDays: calculateHoldingDays(asset?.acquired_at ?? null, sale.sold_at),
     };
   });
 }
@@ -632,17 +675,6 @@ function nullableWhole(value: number | string | null | undefined) {
   return Number.isFinite(result) ? Math.trunc(result) : null;
 }
 function sum(values: Iterable<number>) { let total = 0; for (const value of values) total += value; return total; }
-function holdingDays(acquiredAt: string | null) {
-  if (!acquiredAt) return 0;
-  const acquired = new Date(acquiredAt).getTime();
-  return Number.isFinite(acquired) ? Math.max(0, Math.floor((Date.now() - acquired) / 86_400_000)) : 0;
-}
-function daysBetween(startAt: string | null, endAt: string | null) {
-  if (!startAt || !endAt) return 0;
-  const start = new Date(startAt).getTime();
-  const end = new Date(endAt).getTime();
-  return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, Math.floor((end - start) / 86_400_000)) : 0;
-}
 function averageHoldingDays(assets: AssetView[]) {
   const active = assets.filter((asset) => asset.lifecycleStatus !== "已出售");
   return active.length ? active.reduce((total, asset) => total + asset.holdingDays, 0) / active.length : 0;

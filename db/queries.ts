@@ -66,6 +66,8 @@ export type LogisticsAllocationView = {
   cameraName: string;
   weightG: number | null;
   allocatedShippingCny: number;
+  actualAllocatedShippingCny?: number | null;
+  budgetAllocatedShippingCny?: number | null;
 };
 
 export type LogisticsView = {

@@ -1,5 +1,6 @@
 const localizedNames = new Map<string, string>([
   ["contax::t2 date back", "康泰时 T2"],
+  ["contax::tvs ii", "康泰时 TVS II"],
   ["nikon::28ti", "尼康 28Ti"],
   ["rollei::35 classic titanium", "禄来 35 Classic 钛金版"],
   ["canon::autoboy s ii", "佳能 Autoboy S II / 小霹雳 S II"],

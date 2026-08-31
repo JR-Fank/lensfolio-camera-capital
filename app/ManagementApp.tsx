@@ -299,7 +299,7 @@ function DashboardView({ data, open }: { data: DashboardData; open: (kind: Exclu
     <>
       <section className="metric-ledger" aria-label="投资核心指标">
         <Metric label="实际已投入" value={cny(summary.totalInvested)} note={`已付物流 ${cny(summary.logisticsCost - summary.estimatedLogisticsCost)} · 不含待付`} tone="ink" />
-        <Metric label={partialCoverage ? "已估值资产估值" : "当前市场估值"} value={nullableCny(summary.currentMarketValue, "未估值")} note={`估值覆盖 ${summary.valuedAssetCount} / ${summary.assetCount}`} tone="acid" />
+        <Metric label={partialCoverage ? "已估值资产估值" : "当前市场估值"} value={nullableCny(summary.currentMarketValue, "未估值")} note={`持仓估值覆盖 ${summary.valuedAssetCount} / ${summary.heldAssetCount}`} tone="acid" />
         <Metric label={partialCoverage ? "已估值资产浮盈" : "浮盈金额"} value={signed(summary.unrealizedProfit)} note={`${partialCoverage ? "已估值资产" : "投资"} ROI ${pct(summary.roi)} · 成本 ${nullableCny(summary.valuedAssetCarryingCost)}`} tone={summary.unrealizedProfit === null ? undefined : summary.unrealizedProfit >= 0 ? "positive" : "negative"} />
         <Metric label="当前资产数量" value={`${summary.assetCount} 台`} note={`预计完全落地成本 ${cny(summary.projectedCostBasis)}`} />
         <Metric label="平均持有周期" value={`${number(summary.averageHoldingDays, 0)} 天`} note="从采购日期计算" compact />
@@ -513,10 +513,15 @@ function LogisticsViewPage({ data, open, refreshTracking, busy, canRefreshTracki
               </ol>
             </div>
             <div className="allocation-ledger">
-              <header><span>费用分摊</span><b>{order.allocationMethod}</b></header>
+              <header><span>{order.isEstimated ? "预算费用分摊" : "实际费用分摊"}</span><b>{order.allocationMethod}</b></header>
               {order.allocations.map((allocation) => {
                 const allocationLocalizedName = getLocalizedNameFromFormalName(allocation.cameraName);
-                return <div key={allocation.cameraId}><span className="allocation-asset-name">{allocation.cameraName}{allocationLocalizedName && <em>{allocationLocalizedName}</em>}</span><small>{grams(allocation.weightG)}</small><b>{cny(allocation.allocatedShippingCny)}</b></div>;
+                const showBudget = allocation.actualAllocatedShippingCny !== null
+                  && allocation.actualAllocatedShippingCny !== undefined
+                  && allocation.budgetAllocatedShippingCny !== null
+                  && allocation.budgetAllocatedShippingCny !== undefined
+                  && Math.abs(allocation.actualAllocatedShippingCny - allocation.budgetAllocatedShippingCny) >= 0.01;
+                return <div key={allocation.cameraId}><span className="allocation-asset-name">{allocation.cameraName}{allocationLocalizedName && <em>{allocationLocalizedName}</em>}</span><small>{grams(allocation.weightG)}{showBudget ? ` · 历史预算 ${cny(allocation.budgetAllocatedShippingCny ?? 0)}` : ""}</small><b>{cny(allocation.allocatedShippingCny)}</b></div>;
               })}
             </div>
             <footer>
@@ -642,7 +647,7 @@ function AnalysisView({ data }: { data: DashboardData }) {
         <Metric label="资产生命周期" value={`${data.summary.heldAssetCount} / ${data.summary.soldAssetCount}`} note="持有 / 已售" compact />
       </section>
       <SectionTitle kicker="ASSET PERFORMANCE" title="单机表现" />
-      <div className="performance-ledger">{performance.map((item) => <article key={item.asset.id}><header><div><span>{item.asset.brand}</span><h3>{item.asset.model}</h3></div><b className={item.sold ? "sold" : "held"}>{item.asset.lifecycleStatus}</b></header><dl><div><dt>成本基数</dt><dd>{cny(item.asset.trueCost)}</dd></div><div><dt>{item.sold ? "净回款" : "当前估值"}</dt><dd>{nullableCny(item.value, item.sold ? "未记录" : "未估值")}</dd></div><div><dt>{item.sold ? "已实现盈亏" : "未实现盈亏"}</dt><dd className={performanceClass(item.profit)}>{signed(item.profit)}</dd></div><div><dt>{item.sold ? "已实现 ROI" : "未实现 ROI"}</dt><dd className={performanceClass(item.roi)}>{pct(item.roi)}</dd></div><div><dt>持有周期</dt><dd>{item.holdingDays} 天</dd></div></dl></article>)}</div>
+      <div className="performance-ledger">{performance.map((item) => { const localizedName = getAssetLocalizedName(item.asset.brand, item.asset.model); return <article key={item.asset.id}><header><div><span>{item.asset.brand}</span><h3>{item.asset.model}</h3>{localizedName && <small>{localizedName}</small>}</div><b className={item.sold ? "sold" : "held"}>{item.asset.lifecycleStatus}</b></header><dl><div><dt>成本基数</dt><dd>{cny(item.asset.trueCost)}</dd></div><div><dt>{item.sold ? "净回款" : "当前估值"}</dt><dd>{nullableCny(item.value, item.sold ? "未记录" : "未估值")}</dd></div><div><dt>{item.sold ? "已实现盈亏" : "未实现盈亏"}</dt><dd className={performanceClass(item.profit)}>{signed(item.profit)}</dd></div><div><dt>{item.sold ? "已实现 ROI" : "未实现 ROI"}</dt><dd className={performanceClass(item.roi)}>{pct(item.roi)}</dd></div><div><dt>持有周期</dt><dd>{item.holdingDays} 天</dd></div></dl></article>; })}</div>
       <SectionTitle kicker="RANKINGS" title="组合排名" />
       <div className="analysis-rankings"><Ranking title="ROI 排名" items={roiRanking} value={(item) => pct(item.roi)} /><Ranking title="绝对利润排名" items={profitRanking} value={(item) => signed(item.profit)} /><Ranking title="资金占用排名" items={capitalRanking} value={(item) => cny(item.asset.trueCost)} /></div>
       <SectionTitle kicker="CAPITAL ALLOCATION" title="当前持仓资金占用" />
