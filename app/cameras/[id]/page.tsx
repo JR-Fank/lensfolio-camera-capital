@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getSupabaseAssetDetailData } from "../../../lib/supabase/dashboard";
+import { getPortfolioAccess } from "../../../lib/supabase/portfolio-access";
 import ManagementApp from "../../ManagementApp";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,10 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function CameraPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const data = await getSupabaseAssetDetailData(id);
+  const [data, access] = await Promise.all([
+    getSupabaseAssetDetailData(id),
+    getPortfolioAccess(),
+  ]);
   if (!data) notFound();
-  return <ManagementApp initialData={data} section="assets" selectedAssetId={id} />;
+  return <ManagementApp initialData={data} section="assets" selectedAssetId={id} canManageValuation={access.canWrite} />;
 }

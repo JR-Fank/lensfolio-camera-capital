@@ -16,7 +16,7 @@ import {
 import { isJapanPostTrackingNumber } from "../lib/tracking/japan-post";
 
 type Section = "dashboard" | "assets" | "logistics" | "repairs" | "sales" | "buy-decision" | "analysis";
-type ModalKind = "asset" | "repair" | "valuation" | "sale" | "logistics" | "expense" | "status" | null;
+type ModalKind = "asset" | "repair" | "sale" | "logistics" | "expense" | "status" | null;
 
 const nav: Array<{ id: Section; href: string; label: string; index: string }> = [
   { id: "dashboard", href: "/", label: "Dashboard", index: "01" },
@@ -70,12 +70,14 @@ export default function ManagementApp({
   section = "dashboard",
   selectedAssetId,
   canCreateAsset = false,
+  canManageValuation = false,
   canRefreshTracking = false,
 }: {
   initialData: DashboardData;
   section?: Section;
   selectedAssetId?: string;
   canCreateAsset?: boolean;
+  canManageValuation?: boolean;
   canRefreshTracking?: boolean;
 }) {
   const router = useRouter();
@@ -190,9 +192,9 @@ export default function ManagementApp({
   };
 
   const page = selectedAsset
-    ? <AssetDetail asset={selectedAsset} data={data} open={open} />
-    : section === "dashboard" ? <DashboardView data={data} open={open} />
-      : section === "assets" ? <AssetsView data={data} canCreateAsset={canCreateAsset} open={open} />
+    ? <AssetDetail asset={selectedAsset} data={data} open={open} canManageValuation={canManageValuation} />
+    : section === "dashboard" ? <DashboardView data={data} open={open} canManageValuation={canManageValuation} />
+      : section === "assets" ? <AssetsView data={data} canCreateAsset={canCreateAsset} canManageValuation={canManageValuation} />
         : section === "logistics" ? <LogisticsViewPage data={data} open={open} refreshTracking={refreshTracking} busy={busy} canRefreshTracking={canRefreshTracking} />
           : section === "repairs" ? <RepairsView data={data} open={open} />
             : section === "sales" ? <SalesView data={data} open={open} />
@@ -276,7 +278,6 @@ export default function ManagementApp({
             <button className="modal-close" type="button" onClick={() => setModal(null)} aria-label="关闭">×</button>
             {modal === "asset" && <AssetForm onSubmit={(event) => submit("/api/cameras", event)} busy={busy} />}
             {modal === "repair" && <RepairForm assets={data.assets} cameraId={cameraId} onSubmit={(event) => submit("/api/repairs", event)} busy={busy} />}
-            {modal === "valuation" && <ValuationForm assets={data.assets} cameraId={cameraId} onSubmit={(event) => submit("/api/valuations", event)} busy={busy} />}
             {modal === "sale" && <SaleForm assets={data.assets} cameraId={cameraId} onSubmit={(event) => submit("/api/sales", event)} busy={busy} />}
             {modal === "logistics" && <LogisticsForm assets={data.assets} onSubmit={(event) => submit("/api/logistics", event)} busy={busy} />}
             {modal === "expense" && <ExpenseForm assets={data.assets} cameraId={cameraId} onSubmit={(event) => submit("/api/expenses", event)} busy={busy} />}
@@ -291,7 +292,7 @@ export default function ManagementApp({
   );
 }
 
-function DashboardView({ data, open }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>, id?: string) => void }) {
+function DashboardView({ data, open, canManageValuation }: { data: DashboardData; open: (kind: Exclude<ModalKind, null>, id?: string) => void; canManageValuation: boolean }) {
   const { summary } = data;
   const active = data.assets.filter((asset) => asset.lifecycleStatus !== "已出售");
   const valuedActive = active.filter((asset) => asset.normalProfit !== null && asset.roi !== null);
@@ -336,7 +337,7 @@ function DashboardView({ data, open }: { data: DashboardData; open: (kind: Exclu
 
       <SectionTitle kicker="POSITION MONITOR" title="核心仓位" action={!data.migrationReadOnly ? <button className="text-action" type="button" onClick={() => open("asset")}>＋ 新增机器</button> : undefined} />
       <div className="asset-card-grid">
-        {data.assets.slice(0, 3).map((asset) => <InvestmentCard asset={asset} sale={data.sales.find((record) => record.cameraId === asset.id)} open={open} readOnly={data.migrationReadOnly} key={asset.id} />)}
+        {data.assets.slice(0, 3).map((asset) => <InvestmentCard asset={asset} sale={data.sales.find((record) => record.cameraId === asset.id)} canManageValuation={canManageValuation} key={asset.id} />)}
       </div>
       <div className="view-all"><Link href="/assets">查看全部 {data.assets.length} 台资产 →</Link></div>
     </>
@@ -399,7 +400,7 @@ function ChartHead({ label, title, note }: { label: string; title: string; note:
   return <header className="chart-head"><div><p>{label}</p><h3>{title}</h3></div><span>{note}</span></header>;
 }
 
-function AssetsView({ data, canCreateAsset, open }: { data: DashboardData; canCreateAsset: boolean; open: (kind: Exclude<ModalKind, null>, id?: string) => void }) {
+function AssetsView({ data, canCreateAsset, canManageValuation }: { data: DashboardData; canCreateAsset: boolean; canManageValuation: boolean }) {
   return (
     <>
       <div className="toolbar-row">
@@ -408,7 +409,7 @@ function AssetsView({ data, canCreateAsset, open }: { data: DashboardData; canCr
       </div>
       <ModelInventoryPools assets={data.assets} mode="assets" />
       <div className="asset-card-grid wide">
-        {data.assets.map((asset) => <InvestmentCard asset={asset} sale={data.sales.find((record) => record.cameraId === asset.id)} open={open} readOnly={data.migrationReadOnly} key={asset.id} />)}
+        {data.assets.map((asset) => <InvestmentCard asset={asset} sale={data.sales.find((record) => record.cameraId === asset.id)} canManageValuation={canManageValuation} key={asset.id} />)}
       </div>
     </>
   );
@@ -494,7 +495,7 @@ function modelPoolSortValue(pool: ModelInventoryPool, sortBy: ModelPoolSort) {
   return pool.blendedCostAdvantage ?? Number.NEGATIVE_INFINITY;
 }
 
-function InvestmentCard({ asset, sale, open, readOnly }: { asset: AssetView; sale?: SaleView; open: (kind: Exclude<ModalKind, null>, id?: string) => void; readOnly: boolean }) {
+function InvestmentCard({ asset, sale, canManageValuation }: { asset: AssetView; sale?: SaleView; canManageValuation: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const normalRoi = asset.roi;
   const isSold = asset.lifecycleStatus === "已出售";
@@ -545,7 +546,7 @@ function InvestmentCard({ asset, sale, open, readOnly }: { asset: AssetView; sal
           </div>}
         </div>
         {isSold ? <div className="scenario-ledger realized-scenario"><span><small>净回款</small><b>{nullableCny(sale?.netProceedsCny ?? null)}</b></span><span><small>已实现利润</small><b className={performanceClass(sale?.finalProfit ?? null)}>{signed(sale?.finalProfit ?? null)}</b></span><span className="roi-cell"><small>已实现 ROI</small><b className={performanceClass(sale?.realizedRoi ?? null)}>{pct(sale?.realizedRoi ?? null)}</b></span><span><small>成交 / 持有</small><b>{calendarDate(sale?.soldAt ?? null)} · {sale?.holdingDays ?? 0} 天</b></span></div> : <div className="scenario-ledger"><span><small>保守利润</small><b className={performanceClass(asset.conservativeProfit)}>{signed(asset.conservativeProfit)}</b></span><span><small>中性利润</small><b className={performanceClass(asset.normalProfit)}>{signed(asset.normalProfit)}</b></span><span><small>乐观利润</small><b className={performanceClass(asset.optimisticProfit)}>{signed(asset.optimisticProfit)}</b></span><span className="roi-cell"><small>中位价 ROI</small><b className={performanceClass(normalRoi)}>{pct(normalRoi)}</b></span></div>}
-        <div className="asset-card-detail-actions">{!readOnly && !isSold && <button type="button" onClick={() => open("valuation", asset.id)}>更新估价</button>}<Link href={`/cameras/${asset.id}`}>机器详情 →</Link></div>
+        <div className="asset-card-detail-actions">{canManageValuation && !isSold && <Link href={`/cameras/${asset.id}/valuation/research`}>{hasValuation ? "更新闲鱼估值" : "研究闲鱼挂牌价"}</Link>}<Link href={`/cameras/${asset.id}`}>机器详情 →</Link></div>
       </div>}
       <footer>
         <span>{isSold ? `${calendarDate(sale?.soldAt ?? null)} 成交 · ${sale?.holdingDays ?? 0} 天持有` : `${asset.holdingDays} 天持有 · ${asset.lifecycleStatus}`}</span>
@@ -811,14 +812,14 @@ function AnalysisView({ data }: { data: DashboardData }) {
   );
 }
 
-function AssetDetail({ asset, data, open }: { asset: AssetView; data: DashboardData; open: (kind: Exclude<ModalKind, null>, id?: string) => void }) {
+function AssetDetail({ asset, data, open, canManageValuation }: { asset: AssetView; data: DashboardData; open: (kind: Exclude<ModalKind, null>, id?: string) => void; canManageValuation: boolean }) {
   const repairs = data.repairs.filter((record) => record.cameraId === asset.id);
   const sales = data.sales.filter((record) => record.cameraId === asset.id);
   const expenses = data.expenses.filter((record) => record.cameraId === asset.id);
   return (
     <>
-      <div className="detail-actions"><Link href="/assets">← 返回资产管理</Link>{!data.migrationReadOnly && <div><button type="button" onClick={() => open("status", asset.id)}>更新状态</button><button type="button" onClick={() => open("expense", asset.id)}>＋ 其他费用</button><button type="button" onClick={() => open("repair", asset.id)}>＋ 维修记录</button><button type="button" onClick={() => open("valuation", asset.id)}>更新估价</button><button className="primary-action" type="button" onClick={() => open("sale", asset.id)}>记录出售</button></div>}</div>
-      <InvestmentCard asset={asset} sale={sales[0]} open={open} readOnly={data.migrationReadOnly} />
+      <div className="detail-actions"><Link href="/assets">← 返回资产管理</Link>{!data.migrationReadOnly && <div><button type="button" onClick={() => open("status", asset.id)}>更新状态</button><button type="button" onClick={() => open("expense", asset.id)}>＋ 其他费用</button><button type="button" onClick={() => open("repair", asset.id)}>＋ 维修记录</button>{canManageValuation && asset.lifecycleStatus !== "已出售" && <Link className="detail-action-link" href={`/cameras/${asset.id}/valuation/research`}>{asset.marketMedianCny === null ? "研究闲鱼挂牌价" : "更新闲鱼估值"}</Link>}<button className="primary-action" type="button" onClick={() => open("sale", asset.id)}>记录出售</button></div>}</div>
+      <InvestmentCard asset={asset} sale={sales[0]} canManageValuation={canManageValuation} />
       <div className="detail-grid">
         <article className="record-panel"><p className="eyebrow">ASSET STATUS</p><h2>机器档案</h2><dl><div><dt>采购日期</dt><dd>{asset.acquiredAt}</dd></div><div><dt>采购平台</dt><dd>{asset.purchasePlatform || "—"}</dd></div><div><dt>订单 / 卖家</dt><dd>{asset.purchaseOrderRef || "—"} · {asset.purchaseSeller || "—"}</dd></div><div><dt>序列号</dt><dd>{asset.serialNumber || "未记录"}</dd></div><div><dt>机器重量</dt><dd>{asset.weightG ? `${asset.weightG} g` : "未记录"}</dd></div><div><dt>当前状态</dt><dd>{asset.lifecycleStatus}</dd></div><div><dt>维修状态</dt><dd>{asset.repairStatus}</dd></div><div><dt>成色等级</dt><dd>{asset.conditionGrade || "未记录"}</dd></div><div><dt>持有周期</dt><dd>{sales[0]?.holdingDays ?? asset.holdingDays} 天</dd></div><div><dt>备注</dt><dd>{asset.notes || "—"}</dd></div></dl></article>
         <article className="record-panel"><p className="eyebrow">COST EVENTS</p><h2>费用、维修与销售</h2>{repairs.length || sales.length || expenses.length ? <ul className="record-list">{expenses.map((item) => <li key={item.id}><span>{item.expenseDate}</span><b>{item.category} · {item.notes || "其他费用"}</b><em>−{cny(item.amountCny)}</em></li>)}{repairs.map((item) => <li key={item.id}><span>{item.repairDate}</span><b>{item.workPerformed}</b><em>−{cny(item.costCny)}</em></li>)}{sales.map((item) => <li key={item.id}><span>{item.soldAt || item.listedAt || "—"}</span><b>{item.platform} · {item.status}</b><em className={item.finalProfit >= 0 ? "gain" : "loss"}>{signed(item.finalProfit)}</em></li>)}</ul> : <p className="panel-empty">暂无其他费用、维修或销售记录。</p>}</article>
@@ -900,13 +901,6 @@ function RepairForm({ assets, cameraId, onSubmit, busy }: { assets: AssetView[];
     <Field label="机器" wide><AssetSelect assets={assets} defaultValue={cameraId} /></Field><Field label="日期"><input name="repairDate" type="date" defaultValue={today()} required /></Field><Field label="维修结果"><select name="resultingStatus" defaultValue="已维修"><option>未检测</option><option>正常</option><option>待维修</option><option>已维修</option></select></Field>
     <Field label="发现问题" wide><input name="problem" required placeholder="例如：闪光灯不工作" /></Field><Field label="维修项目" wide><input name="workPerformed" required placeholder="例如：更换闪光灯电容并清洁" /></Field><Field label="维修费用 CNY"><input name="costCny" type="number" min="0" step="0.01" defaultValue="0" required /></Field><Field label="维修商"><input name="vendor" /></Field><Field label="维修前估值"><input name="valueBeforeCny" type="number" min="0" defaultValue="0" /></Field><Field label="维修后估值"><input name="valueAfterCny" type="number" min="0" defaultValue="0" /></Field><Field label="备注" wide><textarea name="notes" rows={3} /></Field>
   </div><Submit busy={busy} label="保存维修记录" /></form>;
-}
-function ValuationForm({ assets, cameraId, onSubmit, busy }: { assets: AssetView[]; cameraId: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
-  const selected = assets.find((asset) => asset.id === cameraId) ?? assets[0];
-  return <form onSubmit={onSubmit}><ModalHeader kicker="MARK TO MARKET" title="更新市场估值" copy="当前阶段人工录入可比样本；每次保存都保留历史，不伪装成自动采集。" /><div className="form-grid">
-    <Field label="机器" wide><AssetSelect assets={assets} defaultValue={cameraId} /></Field><Field label="估价来源"><select name="source"><option>闲鱼</option><option>Mercari</option><option>eBay</option><option>人工调研</option></select></Field><Field label="估价日期"><input name="valuedAt" type="date" defaultValue={today()} required /></Field><Field label="搜索关键词" wide><input name="keyword" defaultValue={selected ? `${selected.brand} ${selected.model}${selected.variant ? ` ${selected.variant}` : ""}` : ""} /></Field>
-    <Field label="价格区间下限"><input name="lowCny" type="number" min="0" defaultValue={selected?.marketLowCny ?? undefined} required /></Field><Field label="市场中位价"><input name="medianCny" type="number" min="0" defaultValue={selected?.marketMedianCny ?? undefined} required /></Field><Field label="价格区间上限"><input name="highCny" type="number" min="0" defaultValue={selected?.marketHighCny ?? undefined} required /></Field><Field label="预计售价"><input name="expectedCny" type="number" min="0" defaultValue={selected?.expectedSaleCny ?? undefined} required /></Field><Field label="样本数"><input name="sampleSize" type="number" min="0" defaultValue={selected?.valuationSampleSize || ""} /></Field><Field label="样本成色"><input name="conditionGrade" defaultValue={selected?.conditionGrade || ""} /></Field><Field label="备注" wide><textarea name="notes" rows={3} /></Field><p className="cleaning-rule">保存时记录统一清洗口径：排除维修机、故障机、配件、皮套、说明书与空壳；只保留完整且可正常使用的机器样本。可信度由样本量和价格离散程度自动计算。</p>
-  </div><Submit busy={busy} label="保存市场估价" /></form>;
 }
 function SaleForm({ assets, cameraId, onSubmit, busy }: { assets: AssetView[]; cameraId: string; onSubmit: (event: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
   const selected = assets.find((asset) => asset.id === cameraId) ?? assets[0];

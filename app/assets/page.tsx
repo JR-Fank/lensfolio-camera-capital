@@ -8,5 +8,5 @@ export default async function AssetsPage() {
     getSupabaseDashboardData(),
     getPortfolioAccess(),
   ]);
-  return <ManagementApp initialData={data} section="assets" canCreateAsset={access.canWrite} />;
+  return <ManagementApp initialData={data} section="assets" canCreateAsset={access.canWrite} canManageValuation={access.canWrite} />;
 }
