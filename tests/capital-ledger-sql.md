@@ -1,5 +1,49 @@
 # Capital Ledger SQL migration test specification
 
+## Formal migration preparation additions
+
+For the prepared implementation, use the ordered `supabase/migrations` including
+`20260905000100` through `20260905000400`; do not also apply the old drafts.
+The original draft-only cases below still specify the core ledger behavior.
+The following RPC execution cases are specifications for a separately authorized
+disposable database run; no repair RPC is called during migration preparation.
+
+1. Verify source repair and funding bootstrap are SECURITY INVOKER, deny anon
+   and service_role execution, require `auth.uid()` and owner/editor membership,
+   and reject a viewer or a different portfolio without changing any row.
+2. Reject NULL, infinite, or wrong-local-date S II timestamps; reject NULL or
+   infinite shipping timestamps and a T2 payment after the known refund. Verify
+   no midnight/current-time fallback appears in stored business timestamps.
+3. Seed only confirmed baseline purchases and S II carrying cost. Authorize a
+   synthetic fixture run with explicitly labelled test timestamps. Verify one
+   sale, two shipments, two items, two gross costs, one refund, one S II status
+   event, and one source audit receipt. Assert generated sale net proceeds 1288,
+   S II profit 196, T2 carrying cost 4890, and TVS II carrying cost 2665.
+4. Replay with identical timestamps in another session timezone. Assert the
+   same returned IDs and unchanged row counts. Alter one argument or one source
+   row after repair and assert replay rejects the conflict atomically.
+5. Before repair, separately seed an existing sale, shipment, shipping cost,
+   reversal, wrong purchase amount, missing asset, or non-NULL camera measured
+   weight. Each must reject without retaining any partial sale/shipping rows.
+   In particular, a TVS II conflict must roll back earlier T2 inserts.
+6. Assert T2 shipment actual, item snapshot, and gross original cost all equal
+   109, with a separate -22 reversal. Verify 500/507/657, 3120 cm3, and 26 cm in
+   distinctly named audit fields; both camera measured weights stay NULL.
+   TVS II audit evidence must retain all three JPY components totaling 2990.
+   Assert no tracking_events are created and the bundle S II row is unchanged.
+7. Run funding bootstrap after source repair with an explicit Date Back sale.
+   Assert two participants, three stable account codes, seven posted events,
+   and the four derived acceptance totals. Replay and verify identical IDs,
+   balances and audit counts, including after harmless participant label changes.
+8. Reject a conflicting stable account identity, missing source receipt,
+   incorrect Date Back sale, missing source cost, and a changed purchase amount.
+   Assert bootstrap rollback includes any newly created participant/account rows.
+9. Concurrently replay each RPC with identical input: at most one set of source
+   and funding rows commits. Exercise concurrent standalone funding operations;
+   retry a transaction if PostgreSQL reports a deadlock/serialization failure,
+   then verify all invariants and idempotency counts. Do not claim single-session
+   tests prove concurrency safety.
+
 ## Scope and execution boundary
 
 This is a future migration test plan, not an executable production repair.
