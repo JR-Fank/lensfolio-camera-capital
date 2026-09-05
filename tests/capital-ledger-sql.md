@@ -3,7 +3,7 @@
 ## Formal migration preparation additions
 
 For the prepared implementation, use the ordered `supabase/migrations` including
-`20260905000100` through `20260905000400`; do not also apply the old drafts.
+`20260905000100` through `20260905000500`; do not also apply the old drafts.
 The original draft-only cases below still specify the core ledger behavior.
 The following RPC execution cases are specifications for a separately authorized
 disposable database run; no repair RPC is called during migration preparation.
@@ -11,13 +11,14 @@ disposable database run; no repair RPC is called during migration preparation.
 1. Verify source repair and funding bootstrap are SECURITY INVOKER, deny anon
    and service_role execution, require `auth.uid()` and owner/editor membership,
    and reject a viewer or a different portfolio without changing any row.
-2. Reject NULL, infinite, or wrong-local-date S II timestamps; reject NULL or
+2. Accept NULL S II timestamp as date-only; reject infinite or wrong-local-date
+   non-NULL S II timestamps; reject NULL or
    infinite shipping timestamps and a T2 payment after the known refund. Verify
    no midnight/current-time fallback appears in stored business timestamps.
 3. Seed only confirmed baseline purchases and S II carrying cost. Authorize a
    synthetic fixture run with explicitly labelled test timestamps. Verify one
    sale, two shipments, two items, two gross costs, one refund, one S II status
-   event, and one source audit receipt. Assert generated sale net proceeds 1288,
+   event only for exact-time evidence (zero for date-only), and one source audit receipt. Assert generated sale net proceeds 1288,
    S II profit 196, T2 carrying cost 4890, and TVS II carrying cost 2665.
 4. Replay with identical timestamps in another session timezone. Assert the
    same returned IDs and unchanged row counts. Alter one argument or one source
@@ -48,7 +49,7 @@ disposable database run; no repair RPC is called during migration preparation.
 
 This is a future migration test plan, not an executable production repair.
 Run it only against a disposable database created from the repository's ordered
-`supabase/migrations` followed by the two drafts in `docs/migration/drafts`.
+`supabase/migrations` through `20260905000500`. Never apply the old drafts again.
 Do not connect the harness to the linked production project. Each case must run
 in its own transaction and roll back its fixtures.
 
@@ -60,8 +61,7 @@ has not committed.
 
 ## Foundation and migration compatibility
 
-1. Apply every existing repository migration, then draft `00100`, then draft
-   `00200`. Assert that creation succeeds without duplicate enum, table, policy,
+1. Apply every repository migration in filename order through `00500`. Assert that creation succeeds without duplicate enum, table, policy,
    index, or constraint names.
 2. Before `00100`, assert that `cost_entries_one_reversal_per_entry_idx` and
    `cost_entries_asset_source_cost_key` exist. Afterwards assert that both are
@@ -73,7 +73,7 @@ has not committed.
    chain and an over-reversed original and assert the preflight aborts without
    partially replacing the old uniqueness rules.
 4. Execute `public.settle_shipment_shipping_actual` from migration `01700` on a
-   shipment created before the drafts. Assert it still turns exactly one pending
+   shipment created before the capital migrations. Assert it still turns exactly one pending
    shipping cost per item into a posted gross cost, retains each locked
    `shipment_items` allocation snapshot, and sets `shipments.actual_paid_cny` to
    the gross payment.
@@ -215,11 +215,12 @@ unknown.
 
 - Target only asset `a847b8d7-a50d-4bdd-bdf7-2258dda5f679`; record net proceeds
   `1288.00` and preserve carrying cost `1092.00`.
-- Assert the RPC rejects `p_occurred_at is null` and rejects any timestamp that
-  does not exactly equal `sales.sold_at`. The known date `2026-09-02` alone is
-  insufficient; the test must not invent midnight or another fixed time.
-- Once an explicit evidenced `sold_at` is supplied, assert one sales-pool
-  allocation of `+1288.00` and realized profit `196.00` from `asset_financials`.
+- The original exact-time RPC still rejects `p_occurred_at is null` and a
+  timestamp differing from `sales.sold_at`. With only `sold_on = 2026-09-02`,
+  use `reconcile_capital_sale_proceeds_date_only`; keep both `sales.sold_at`
+  and funding `occurred_at` NULL.
+- For either evidence path, assert one sales-pool allocation of `+1288.00`
+  and realized profit `196.00` from `asset_financials`.
 - Attempt a second completed sale for the same asset and assert the existing
   `sales_one_completed_sale_per_asset_idx` rejects it. Attempt a second funding
   import for the same sale and assert the ledger unique index rejects it.
@@ -243,3 +244,96 @@ Query bottom-up after all confirmed fixtures are posted:
 7. Repeat every reconciliation RPC call with its original idempotency key and
    assert all balances, row counts, source evidence, and audit counts remain
    unchanged.
+
+## Date-only sale evidence follow-up (00500)
+
+Use synthetic fixtures in an isolated PostgreSQL-compatible database, never
+production RPCs. Apply 00100–00400 unchanged before 00500. `db push --dry-run`
+only checks the remote migration plan; linked lint checks applied definitions,
+not the unapplied 00500. Record isolated execution separately from those checks.
+
+1. Before 00500, seed an exact sale near a UTC date boundary with portfolio
+   timezone Asia/Hong_Kong. Apply 00500 in a different session timezone and
+   assert `sold_on = (sold_at AT TIME ZONE portfolio.display_timezone)::date`;
+   the original timestamp and existing posted funding remain unchanged. Replay
+   a pre-00500 exact source-repair receipt after backfill: identical IDs, no writes.
+2. Insert a sold sale with only an exact `sold_at`, then use the original RPC.
+   Assert derived `sold_on`, exact matching funding `occurred_at`, NULL
+   `occurred_on`, unchanged profit and positive pool allocation. An explicitly
+   conflicting `sold_on` must fail with `23514`, on both INSERT and UPDATE.
+3. Insert a sold sale with only `sold_on`; assert NULL `sold_at` remains NULL,
+   even with session timezone UTC or America/Los_Angeles. Reject a sold row
+   missing both date and timestamp, or missing sold price (`23514`). Reject a
+   portfolio timezone edit that would invalidate an existing exact sale date;
+   allow an equivalent timezone and leave date-only evidence unchanged.
+4. Run source repair with `p_autoboy_sii_sold_at = NULL`, explicit synthetic
+   shipping payment times, and confirmed purchase/cost fixture amounts. Assert
+   standalone S II sold_on 2026-09-02, sold_at NULL, net proceeds 1288, operational
+   status sold, carrying cost 1092, realized profit 196. No new S II status event
+   may exist. Receipt evidence must contain sold_on and NULL sold_at; audit
+   recording time is metadata, never sale occurrence time. Bundle asset
+   `c916a37b-9ac6-43ff-b97b-577ef9120414` and all its evidence stay unchanged.
+5. Call the date-only RPC with portfolio, S II sale ID, 2026-09-02, stable key,
+   pool account ID, and note. Assert one posted transaction with amount 1288,
+   occurred_at NULL, occurred_on 2026-09-02, one +1288 pool allocation, and one
+   audit receipt. Force all deferred checks before accepting the result.
+6. Repeat that request, including under another session timezone. Assert same
+   ID, idempotent_replay true, and unchanged transaction/allocation/audit counts.
+   A changed note with the same key must fail `23505`; changed sale/date/account
+   must reject. A different key for the same sale must fail the unique index.
+   Concurrent identical requests must commit at most one set of rows; exercise
+   real separate PostgreSQL sessions, not a single-session emulator.
+7. Reject the date-only RPC for an exact-time sale, wrong date, non-sold sale,
+   zero/negative net proceeds, NULL/infinite date, or blank key. Reject anonymous,
+   viewer, wrong-portfolio sale/account, and a participant-capital account.
+   Verify SECURITY INVOKER and that authenticated cannot directly execute any
+   new private helper or the replaced private funding validator.
+8. Bypass RPCs in negative fixtures: insert draft then post funding with wrong
+   amount/date, fabricated occurred_at for a date-only sale, NULL occurred_at
+   for an exact sale, no date at all, both occurrence fields, negative pool
+   allocation, or missing allocations. Force deferred checks: all must reject.
+   Update a funded sale's date, status, amount, or exactness and force checks;
+   reject conflicts with immutable funding evidence. Composite portfolio FKs
+   and existing source revalidation triggers must still enforce isolation.
+9. For every non-sale funding kind (purchase_funding, cost_funding, refund,
+   distribution, adjustment, reversal), NULL occurred_at must fail even when
+   occurred_on is supplied. Purchases/logistics retain exact evidence matching.
+10. Update occurred_on, occurred_at, amount, note, status, or delete a posted
+    date-only transaction: expect `55000`. Insert/update/delete its allocation:
+    expect `55000`. No new field bypasses the existing whole-row protection.
+11. Reverse a date-only sale using an explicit timestamp on a later portfolio
+    local date: accept valid opposite allocations. Reject earlier or same-day
+    timestamps (`23514`): same-day ordering cannot be proven without an exact
+    original time. Reject NULL reversal timestamp, reversal chains, wrong
+    accounts/directions, cumulative excess, and per-account excess. Reject a
+    timezone change that would invalidate this ordering. Exact originals retain
+    precise timestamp ordering, including legitimate same-day reversals.
+12. On fresh exact and date-only S II fixtures, run bootstrap with the existing
+    exact Date Back sale ID. Assert seven posted events, pool 2673, Partner A
+    87, Partner B 2665, and realized profit 1356 from DB rows. Replay each branch
+    and verify stable IDs, balances, and audit counts. In the date-only branch,
+    the S II +1288 transaction must retain NULL occurred_at. Missing shipping
+    timestamps still reject source repair without partial writes.
+13. Verify asset_financials and portfolio_metrics count the date-only sale as
+    realized via sale_id/status, with S II profit 196. Verify the existing
+    funding_transaction_balances columns retain names/types/order and the new
+    occurred_on is appended; compare remaining amounts after partial reversals
+    to independent sums. All views remain SECURITY INVOKER and contain no
+    hard-coded final totals.
+
+### Isolated execution evidence (2026-09-05)
+
+PGlite 0.5.8 applied every ordered repository migration to disposable in-memory
+PostgreSQL databases with synthetic auth users and source fixtures. 39 execution
+checks passed, including a pre-00500 exact repair/bootstrap upgraded through the
+new migration, date-only repair/bootstrap, row-derived totals, direct-write
+rejections, RPC replay, RLS denial, immutability, and reversal date/cumulative caps.
+The backfill preserved legacy sale updated_at and exact audit-receipt replay.
+This single-session run does not prove concurrent-session behavior or constitute
+production execution. The concurrent cases above remain a separate test plan.
+
+Linked dry-run planned only 20260905000500. Linked SQL lint inspected the applied
+00300 repair definition and reported six existing warnings (four implicit typed
+constant casts, one loop-variable shadow, one unused declaration). The 00500
+replacement uses explicit casts and the implicit integer-loop variable. It is
+not applied to the linked database, so remote warning clearance is unverified.
