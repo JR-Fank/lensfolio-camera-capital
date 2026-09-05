@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import {
   deriveJapanPostShipmentState,
   japanPostEventFingerprint,
@@ -16,6 +18,74 @@ const SHIPMENT_ID = "e0a99216-763a-58ef-a7d9-d490bbf40fb7";
 const PORTFOLIO_ID = "10000000-0000-4000-8000-000000000001";
 const USER_ID = "10000000-0000-4000-8000-000000000002";
 const RUN_ID = "10000000-0000-4000-8000-000000000003";
+
+// Exercise the actual private helpers without loading Next.js or a Supabase session.
+async function loadSourceFunction(path, name) {
+  const source = await readFile(new URL(path, import.meta.url), "utf8");
+  const declaration = source.match(new RegExp(`^function ${name}\\([\\s\\S]*?^\\}`, "m"));
+  assert.ok(declaration, `Missing function ${name} in ${path}`);
+  return runInNewContext(`${stripTypeScriptTypes(declaration[0])}\n${name}`);
+}
+
+const shipmentDisplayName = await loadSourceFunction(
+  "../lib/supabase/dashboard.ts", "shipmentDisplayName",
+);
+const shipmentCarrierDisplayName = await loadSourceFunction(
+  "../lib/supabase/dashboard.ts", "shipmentCarrierDisplayName",
+);
+const isUuid = await loadSourceFunction(
+  "../app/api/logistics/refresh/route.ts", "isUuid",
+);
+
+test("internal shipment provenance is replaced with a user-facing logistics name", () => {
+  for (const suffix of ["t2", "tvs", "future-shipment"]) {
+    const shipment = { id: SHIPMENT_ID, legacy_id: `confirmed-capital-source-v1:${suffix}` };
+    assert.equal(shipmentDisplayName(shipment, "Contax T2"), "Contax T2 · 国际物流");
+    assert.equal(shipmentDisplayName(shipment, ""), "国际物流");
+    assert.equal(shipment.legacy_id, `confirmed-capital-source-v1:${suffix}`);
+  }
+});
+
+test("other historical shipment names and existing fallbacks are preserved", () => {
+  const display = (legacy_id, cameraNames = "") =>
+    shipmentDisplayName({ id: SHIPMENT_ID, legacy_id }, cameraNames);
+  assert.equal(display("evidence:logistics:t2", "Contax T2"), "Contax T2 · 国际物流");
+  assert.equal(display("evidence:logistics:t2"), "国际物流");
+  assert.equal(display("historical-batch-001", "Contax T2"), "historical-batch-001");
+  assert.equal(display("confirmed-capital-source-v2:t2"), "confirmed-capital-source-v2:t2");
+  assert.equal(display(null), `物流 ${SHIPMENT_ID.slice(0, 8)}`);
+});
+
+test("Japan Post EMS is localized while other carriers and the fallback are preserved", () => {
+  assert.equal(shipmentCarrierDisplayName("Japan Post EMS"), "日本邮政 EMS");
+  assert.equal(shipmentCarrierDisplayName("日本邮政 EMS"), "日本邮政 EMS");
+  assert.equal(shipmentCarrierDisplayName("DHL"), "DHL");
+  assert.equal(shipmentCarrierDisplayName(""), "");
+  assert.equal(shipmentCarrierDisplayName(null), "未记录承运商");
+});
+
+test("refresh UUID validator accepts PostgreSQL md5 UUIDs regardless of version or variant", () => {
+  // md5('test')::uuid: version d and variant c do not satisfy the old RFC restrictions.
+  const md5Uuid = "098f6bcd-4621-d373-cade-4e832627b4f6";
+  assert.equal(isUuid(md5Uuid), true);
+  assert.equal(isUuid(md5Uuid.toUpperCase()), true);
+  assert.equal(isUuid(SHIPMENT_ID), true);
+});
+
+test("refresh UUID validator rejects malformed UUID strings", () => {
+  for (const value of [
+    "",
+    "not-a-uuid",
+    "confirmed-capital-source-v1:t2",
+    "098f6bcd4621d373cade4e832627b4f6",
+    "098f6bcd-4621-d373-cade-4e832627b4fg",
+    "098f6bcd-4621-d373-cade-4e832627b4f",
+    "098f6bcd-4621-d373-cade-4e832627b4f60",
+    "{098f6bcd-4621-d373-cade-4e832627b4f6}",
+  ]) {
+    assert.equal(isUuid(value), false, value);
+  }
+});
 
 const japanPostHtml = `
   <table summary="履歴情報">

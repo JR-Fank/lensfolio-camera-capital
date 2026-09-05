@@ -415,7 +415,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
     const view: LogisticsView = {
       id: shipment.id,
       batchCode: shipmentDisplayName(shipment, cameraNames),
-      carrier: shipment.carrier ?? "未记录承运商",
+      carrier: shipmentCarrierDisplayName(shipment.carrier),
       trackingNumber: shipment.tracking_number,
       origin: shipment.origin ?? "未记录",
       destination: shipment.destination ?? "未记录",
@@ -533,10 +533,17 @@ function shipmentDisplayName(
   shipment: Pick<ShipmentRow, "id" | "legacy_id">,
   cameraNames: string,
 ) {
-  if (shipment.legacy_id?.startsWith("evidence:logistics:")) {
+  if (
+    shipment.legacy_id?.startsWith("evidence:logistics:") ||
+    shipment.legacy_id?.startsWith("confirmed-capital-source-v1:")
+  ) {
     return cameraNames ? `${cameraNames} · 国际物流` : "国际物流";
   }
   return shipment.legacy_id ?? `物流 ${shipment.id.slice(0, 8)}`;
+}
+
+function shipmentCarrierDisplayName(carrier: string | null) {
+  return carrier === "Japan Post EMS" ? "日本邮政 EMS" : carrier ?? "未记录承运商";
 }
 
 export const getSupabaseAssetDetailData = cache(async (assetId: string): Promise<DashboardData | null> => {
