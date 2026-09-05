@@ -167,8 +167,6 @@ begin
         message = 'Idempotency key already exists with different allocations.';
     end if;
 
-    perform private.validate_funding_transaction(p_portfolio_id, v_existing.id);
-
     return jsonb_build_object(
       'transaction_id', v_existing.id,
       'portfolio_id', v_existing.portfolio_id,
@@ -251,21 +249,25 @@ begin
 
   elsif p_transaction_kind = 'refund' then
     perform 1
+    from public.cost_entries reversal
+    join public.cost_entries original
+      on original.portfolio_id = reversal.portfolio_id
+     and original.asset_id = reversal.asset_id
+     and original.id = reversal.reversal_of
+    where reversal.portfolio_id = p_portfolio_id
+      and reversal.id = p_cost_entry_id
+    for update of original, reversal;
+    if not found then
+      raise exception using errcode = 'P0002', message = 'Cost reversal and original cost were not found through RLS.';
+    end if;
+
+    perform 1
     from public.funding_transactions original
     where original.portfolio_id = p_portfolio_id
       and original.id = p_reversal_of
     for update;
     if not found then
       raise exception using errcode = 'P0002', message = 'Original funding transaction was not found through RLS.';
-    end if;
-
-    perform 1
-    from public.cost_entries reversal
-    where reversal.portfolio_id = p_portfolio_id
-      and reversal.id = p_cost_entry_id
-    for update;
-    if not found then
-      raise exception using errcode = 'P0002', message = 'Cost reversal was not found through RLS.';
     end if;
 
   elsif p_transaction_kind = 'reversal' then
@@ -369,9 +371,18 @@ begin
     raise exception using errcode = 'P0001', message = 'Funding transaction could not be posted.';
   end if;
 
-  -- Fail inside the RPC rather than waiting for transaction commit. Deferred
-  -- triggers repeat this validation and also protect non-RPC writes.
-  perform private.validate_funding_transaction(p_portfolio_id, v_transaction_id);
+  -- Fail inside the RPC rather than waiting for transaction commit. Invoking
+  -- the constraint triggers avoids granting authenticated users EXECUTE on the
+  -- SECURITY DEFINER validator. Setting them back to deferred preserves their
+  -- normal behavior for any later statement in the caller's transaction.
+  set constraints
+    public.funding_transactions_validate_deferred,
+    public.funding_allocations_validate_deferred
+  immediate;
+  set constraints
+    public.funding_transactions_validate_deferred,
+    public.funding_allocations_validate_deferred
+  deferred;
 
   insert into public.audit_logs (
     id,

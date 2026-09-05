@@ -37,6 +37,60 @@ alter table public.sales
 -- The foundation schema permits only one cost reversal per original entry.
 -- Replace that uniqueness rule with a deferred cumulative cap so separate
 -- partial refunds remain separate immutable evidence rows.
+do $cost_reversal_preflight$
+begin
+  if exists (
+    select 1
+    from public.cost_entries reversal
+    left join public.cost_entries original
+      on original.portfolio_id = reversal.portfolio_id
+     and original.asset_id = reversal.asset_id
+     and original.id = reversal.reversal_of
+    where reversal.reversal_of is not null
+      and (
+        original.id is null
+        or original.cost_type = 'reversal'
+        or original.reversal_of is not null
+        or reversal.cost_type <> 'reversal'
+        or reversal.source_type <> 'reversal'
+        or reversal.source_id is distinct from reversal.reversal_of
+        or reversal.amount_cny >= 0
+        or (
+          reversal.entry_status = 'posted'
+          and (
+            original.entry_status <> 'posted'
+            or original.amount_cny <= 0
+            or reversal.original_amount >= 0
+            or reversal.currency <> original.currency
+            or reversal.fx_rate_to_cny <> original.fx_rate_to_cny
+            or reversal.occurred_at < original.occurred_at
+          )
+        )
+      )
+  ) then
+    raise exception using
+      errcode = '23514',
+      message = 'Existing cost reversals must be normalized before Capital Ledger migration.';
+  end if;
+
+  if exists (
+    select 1
+    from public.cost_entries original
+    join public.cost_entries reversal
+      on reversal.portfolio_id = original.portfolio_id
+     and reversal.asset_id = original.asset_id
+     and reversal.reversal_of = original.id
+     and reversal.entry_status = 'posted'
+    group by original.portfolio_id, original.asset_id, original.id, original.amount_cny
+    having sum(-reversal.amount_cny) > original.amount_cny
+  ) then
+    raise exception using
+      errcode = '23514',
+      message = 'Existing cumulative cost reversals exceed an original cost amount.';
+  end if;
+end;
+$cost_reversal_preflight$;
+
 drop index if exists public.cost_entries_one_reversal_per_entry_idx;
 
 alter table public.cost_entries
@@ -357,7 +411,9 @@ begin
 end;
 $$;
 
-create constraint trigger cost_entries_validate_reversal_total_deferred
+-- Numeric prefixes make the lock order deterministic for cost row events:
+-- validate/lock the original cost before revalidating its funding transaction.
+create constraint trigger cost_entries_00_validate_reversal_total_deferred
 after insert or update or delete on public.cost_entries
 deferrable initially deferred
 for each row execute function private.validate_cost_reversal_deferred();
@@ -870,12 +926,60 @@ set search_path = ''
 as $$
 declare
   v_source_id uuid;
+  v_old_source_row jsonb;
+  v_new_source_row jsonb;
+  v_related_shipment_id uuid;
+  v_related_shipment_ids uuid[] := array[]::uuid[];
   v_reference record;
 begin
   v_source_id := case when tg_op = 'DELETE' then old.id else new.id end;
 
+  if tg_op <> 'INSERT' then
+    v_old_source_row := to_jsonb(old);
+  end if;
+  if tg_op <> 'DELETE' then
+    v_new_source_row := to_jsonb(new);
+  end if;
+
+  if tg_table_name = 'shipment_items' then
+    if v_old_source_row is not null then
+      v_related_shipment_ids := array_append(
+        v_related_shipment_ids,
+        (v_old_source_row->>'shipment_id')::uuid
+      );
+    end if;
+    if v_new_source_row is not null then
+      v_related_shipment_ids := array_append(
+        v_related_shipment_ids,
+        (v_new_source_row->>'shipment_id')::uuid
+      );
+    end if;
+  elsif tg_table_name = 'cost_entries' then
+    if v_old_source_row->>'cost_type' = 'international_shipping'
+      and v_old_source_row->>'source_type' = 'shipment_item'
+      and nullif(v_old_source_row->>'reversal_of', '') is null then
+      select item.shipment_id
+      into v_related_shipment_id
+      from public.shipment_items item
+      where item.portfolio_id = (v_old_source_row->>'portfolio_id')::uuid
+        and item.id = (v_old_source_row->>'source_id')::uuid;
+      v_related_shipment_ids := array_append(v_related_shipment_ids, v_related_shipment_id);
+    end if;
+
+    if v_new_source_row->>'cost_type' = 'international_shipping'
+      and v_new_source_row->>'source_type' = 'shipment_item'
+      and nullif(v_new_source_row->>'reversal_of', '') is null then
+      select item.shipment_id
+      into v_related_shipment_id
+      from public.shipment_items item
+      where item.portfolio_id = (v_new_source_row->>'portfolio_id')::uuid
+        and item.id = (v_new_source_row->>'source_id')::uuid;
+      v_related_shipment_ids := array_append(v_related_shipment_ids, v_related_shipment_id);
+    end if;
+  end if;
+
   for v_reference in
-    select funding_tx.portfolio_id, funding_tx.id
+    select distinct funding_tx.portfolio_id, funding_tx.id
     from public.funding_transactions funding_tx
     where
       (tg_table_name = 'sales' and funding_tx.sale_id = v_source_id)
@@ -893,6 +997,9 @@ begin
             and allocation.transaction_id = funding_tx.id
             and allocation.account_id = v_source_id
         )
+      )
+      or (
+        funding_tx.shipment_id = any(v_related_shipment_ids)
       )
   loop
     perform private.validate_funding_transaction(v_reference.portfolio_id, v_reference.id);
@@ -923,12 +1030,12 @@ deferrable initially deferred
 for each row execute function private.revalidate_funding_source();
 
 create constraint trigger shipment_items_revalidate_funding_deferred
-after update or delete on public.shipment_items
+after insert or update or delete on public.shipment_items
 deferrable initially deferred
 for each row execute function private.revalidate_funding_source();
 
-create constraint trigger cost_entries_revalidate_funding_deferred
-after update or delete on public.cost_entries
+create constraint trigger cost_entries_10_revalidate_funding_deferred
+after insert or update or delete on public.cost_entries
 deferrable initially deferred
 for each row execute function private.revalidate_funding_source();
 
@@ -1190,9 +1297,6 @@ revoke all on function private.protect_posted_funding_transaction() from public;
 revoke all on function private.protect_posted_funding_allocation() from public;
 revoke all on function private.protect_funded_account_identity() from public;
 revoke all on function private.revalidate_funding_source() from public;
-
-grant execute on function private.validate_funding_transaction(uuid, uuid)
-  to authenticated, service_role;
 
 revoke all on public.funding_participants from public, anon;
 revoke all on public.funding_accounts from public, anon;
