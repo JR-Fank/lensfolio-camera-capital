@@ -74,7 +74,16 @@ test("all funding transaction kinds map to Chinese; unknown values are not echoe
 test("date-only transactions never fabricate a time; exact timestamps use Hong Kong time", () => {
   assert.equal(capitalOccurrence(null, "2026-09-02"), "2026-09-02");
   assert.equal(capitalOccurrence(null, null), "日期未记录");
+});
+
+test("capital occurrence omits zero seconds: 10:32:00 becomes 10:32", () => {
+  assert.equal(capitalOccurrence("2026-09-03T02:32:00Z", null), "2026-09-03 10:32");
+  assert.equal(capitalOccurrence("2026-09-03T10:32:00+08:00", null), "2026-09-03 10:32");
+});
+
+test("capital occurrence preserves nonzero seconds: 17:40:41 stays 17:40:41", () => {
   assert.equal(capitalOccurrence("2026-09-04T09:40:41Z", null), "2026-09-04 17:40:41");
+  assert.equal(capitalOccurrence("2026-09-02T15:00:01Z", null), "2026-09-02 23:00:01");
 });
 
 const uuid = "12345678-1234-1234-1234-123456789abc";

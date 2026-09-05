@@ -11,10 +11,12 @@ export function capitalTransactionKind(kind: string): string {
 export function capitalOccurrence(occurredAt: string | null, occurredOn: string | null): string {
   // occurred_on is evidence of a calendar date, never evidence of midnight.
   if (!occurredAt) return occurredOn ?? "日期未记录";
+  const occurrence = new Date(occurredAt);
   return new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Asia/Hong_Kong", year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
-  }).format(new Date(occurredAt));
+    hour: "2-digit", minute: "2-digit",
+    second: occurrence.getUTCSeconds() === 0 ? undefined : "2-digit", hourCycle: "h23",
+  }).format(occurrence);
 }
 
 /** Remove technical identifiers even when embedded in otherwise useful notes/names. */
