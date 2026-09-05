@@ -14,8 +14,9 @@ import {
   type ModelInventoryPool,
 } from "../lib/model-inventory-pools";
 import { isJapanPostTrackingNumber } from "../lib/tracking/japan-post";
+import MarketValueTrend from "./MarketValueTrend";
 
-type Section = "dashboard" | "assets" | "logistics" | "repairs" | "sales" | "buy-decision" | "analysis";
+type Section = "dashboard" | "assets" | "logistics" | "repairs" | "sales" | "buy-decision" | "analysis" | "capital";
 type ModalKind = "asset" | "repair" | "sale" | "logistics" | "expense" | "status" | null;
 
 const nav: Array<{ id: Section; href: string; label: string; index: string }> = [
@@ -26,9 +27,11 @@ const nav: Array<{ id: Section; href: string; label: string; index: string }> = 
   { id: "sales", href: "/sales", label: "销售记录", index: "05" },
   { id: "buy-decision", href: "/buy-decision", label: "买入决策", index: "06" },
   { id: "analysis", href: "/analysis", label: "投资分析", index: "07" },
+  { id: "capital", href: "/capital", label: "资金账本", index: "08" },
 ];
 
 const sectionCopy: Record<Section, { eyebrow: string; title: string; description: string }> = {
+  capital: { eyebrow: "CAPITAL LEDGER", title: "资金账本", description: "记录资金来源与去向，区分销售回款、参与人投入与已实现利润。" },
   dashboard: { eyebrow: "PORTFOLIO COMMAND", title: "投资组合", description: "用真实成本与退出价格管理每一台相机，而不是只记录买入价。" },
   assets: { eyebrow: "POSITION BOOK", title: "资产管理", description: "采购、物流、维修与估值汇总到单机真实成本。" },
   logistics: { eyebrow: "MOVEMENT CONTROL", title: "物流中心", description: "批次、成本与日本邮政公开轨迹集中管理。" },
@@ -67,6 +70,7 @@ const fullName = (asset: AssetView) => `${asset.brand} ${asset.model}${asset.var
 
 export default function ManagementApp({
   initialData,
+  capitalContent,
   section = "dashboard",
   selectedAssetId,
   canCreateAsset = false,
@@ -74,6 +78,7 @@ export default function ManagementApp({
   canRefreshTracking = false,
 }: {
   initialData: DashboardData;
+  capitalContent?: ReactNode;
   section?: Section;
   selectedAssetId?: string;
   canCreateAsset?: boolean;
@@ -193,6 +198,7 @@ export default function ManagementApp({
 
   const page = selectedAsset
     ? <AssetDetail asset={selectedAsset} data={data} open={open} canManageValuation={canManageValuation} />
+    : section === "capital" ? capitalContent
     : section === "dashboard" ? <DashboardView data={data} open={open} canManageValuation={canManageValuation} />
       : section === "assets" ? <AssetsView data={data} canCreateAsset={canCreateAsset} canManageValuation={canManageValuation} />
         : section === "logistics" ? <LogisticsViewPage data={data} open={open} refreshTracking={refreshTracking} busy={busy} canRefreshTracking={canRefreshTracking} />
@@ -351,12 +357,6 @@ function PortfolioCharts({ data }: { data: DashboardData }) {
   const roiScale = Math.max(1, ...valuedActive.map((asset) => Math.abs(asset.roi ?? 0)));
   const logisticsMax = Math.max(1, ...data.logistics.map((order) => order.shippingCny));
   const repairMax = Math.max(1, ...data.repairs.map((repair) => repair.costCny));
-  const valuationByDate = new Map<string, number>();
-  for (const valuation of data.valuationHistory) {
-    valuationByDate.set(valuation.valuedAt, (valuationByDate.get(valuation.valuedAt) ?? 0) + valuation.medianCny);
-  }
-  const valuationTrend = [...valuationByDate].sort(([a], [b]) => a.localeCompare(b));
-  const valuationMax = Math.max(1, ...valuationTrend.map(([, value]) => value));
 
   return (
     <section className="portfolio-visuals" aria-label="投资组合分析">
@@ -377,11 +377,7 @@ function PortfolioCharts({ data }: { data: DashboardData }) {
         })}</div>
       </article>
 
-      <article className="chart-card valuation-trend">
-        <ChartHead label="MARK TO MARKET" title="市场价格趋势" note={valuationTrend.length < 2 ? "当前只有一个估值日期" : "组合市场中位价"} />
-        <div className="trend-bars">{valuationTrend.map(([day, value]) => <div key={day}><span><i style={{ height: `${Math.max(8, value / valuationMax * 100)}%` }} /></span><b>{cny(value)}</b><small>{day.slice(5)}</small></div>)}</div>
-        {valuationTrend.length < 2 && <p className="chart-empty">再录入一个日期的市场估价后，系统才会形成真实趋势；当前不补造历史。</p>}
-      </article>
+      <MarketValueTrend valuations={data.valuationHistory} />
 
       <article className="chart-card cost-trend">
         <ChartHead label="LOGISTICS COST" title="物流成本趋势" note="按批次实际与预算" />

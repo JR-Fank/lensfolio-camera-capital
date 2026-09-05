@@ -530,12 +530,6 @@ button { color: inherit; }
 .signed-track i { position: absolute; top: 2px; height: 7px; }
 .signed-track .profit-bar { background: var(--red); }
 .signed-track .loss-bar { background: var(--green); }
-.trend-bars { height: 160px; display: flex; align-items: flex-end; gap: 8px; margin-top: 20px; }
-.trend-bars > div { min-width: 38px; flex: 1; display: grid; grid-template-rows: 105px auto auto; align-items: end; gap: 7px; text-align: center; }
-.trend-bars span { height: 105px; display: flex; align-items: flex-end; justify-content: center; background: var(--surface-2); }
-.trend-bars i { width: min(26px, 65%); background: var(--ink); }
-.trend-bars b { font: 600 7px/1 var(--font-data); }
-.trend-bars small { color: var(--muted); font: 7px/1 var(--font-data); }
 .chart-empty { margin: 15px 0 0; color: var(--muted); font-size: 7px; line-height: 1.55; }
 .chart-empty.strong-empty { display: grid; place-items: center; min-height: 170px; margin: 0; text-align: center; }
 .mini-cost-bars { display: grid; gap: 12px; margin-top: 22px; }
@@ -899,4 +893,65 @@ button { color: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* Capital ledger uses the existing paper, ink, acid, and data typography. */
+.capital-ledger-page { min-width: 0; }
+.capital-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 1px; margin: 24px 0; border: 1px solid var(--line); background: var(--line); }
+.capital-metric { min-width: 0; display: grid; align-content: start; gap: 17px; padding: 24px; background: var(--surface); overflow-wrap: anywhere; }
+.capital-metric small { font-size: 12px; }
+.capital-metric strong { font: 600 clamp(26px, 2.8vw, 40px)/1.2 var(--font-data); letter-spacing: -.06em; }
+.capital-metric span { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.capital-metric.pool-metric { background: var(--ink); color: var(--acid); }
+.pool-metric span { color: #bbc1b5; }
+.capital-explainer { display: grid; grid-template-columns: minmax(170px, .65fr) minmax(0, 2fr); gap: 24px; padding: 22px; border-left: 3px solid var(--acid-deep); background: var(--surface-2); }
+.capital-explainer strong { font-size: 18px; line-height: 1.5; }
+.capital-explainer p { margin: 0; font-size: 12px; line-height: 1.9; overflow-wrap: anywhere; }
+.capital-explainer p + p { margin-top: 8px; }
+.capital-section { margin: 36px 0; min-width: 0; }
+.capital-section > header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--ink); }
+.capital-section h2 { margin: 9px 0 0; font-size: 24px; letter-spacing: -.045em; }
+.capital-section > header > span, .capital-section-note { color: var(--muted); font-size: 11px; line-height: 1.8; }
+.capital-participants { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 16px; margin-top: 18px; }
+.capital-participants article { min-width: 0; padding: 22px; border: 1px solid var(--line); background: var(--surface); }
+.capital-participants h3 { margin: 0 0 20px; font-size: 18px; overflow-wrap: anywhere; }
+.capital-ledger-page dl { margin: 0; }
+.capital-participants dl > div, .capital-transactions dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 10px 0; }
+.capital-ledger-page dt { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.capital-ledger-page dd { margin: 0; font: 500 14px/1.5 var(--font-data); overflow-wrap: anywhere; }
+.capital-total { border-top: 1px solid var(--line); }
+.capital-total dt, .capital-total dd { color: var(--ink); font-weight: 700; }
+.capital-pool-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--surface); }
+.capital-pool-summary > div { min-width: 0; padding: 24px; border: 1px solid var(--line); border-top: 0; }
+.capital-pool-summary dd { margin-top: 12px; font-size: clamp(20px, 2.2vw, 30px); }
+.capital-pool-summary .capital-total { background: var(--acid); }
+.capital-transactions { padding: 0; margin: 18px 0 0; list-style: none; display: grid; gap: 12px; }
+.capital-transactions li { min-width: 0; border: 1px solid var(--line); background: var(--surface); }
+.capital-transactions article { padding: 22px; }
+.capital-transactions article > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.capital-transactions header p { margin: 0 0 9px; color: var(--muted); font: 11px/1.6 var(--font-data); }
+.capital-transactions h3 { margin: 0; font-size: 18px; }
+.capital-transactions header strong { font: 600 24px/1.4 var(--font-data); overflow-wrap: anywhere; }
+.capital-source { margin: 16px 0 8px; font-size: 12px; overflow-wrap: anywhere; }
+.capital-transactions dl { border-top: 1px solid var(--line); }
+.capital-note { margin: 12px 0 0; padding-top: 12px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.capital-empty { padding: 24px 0; color: var(--muted); font-size: 13px; }
+.market-trend-bars { display: flex; align-items: end; height: 130px; margin-top: 20px; gap: 0; }
+.market-trend-bars > div { min-width: 0; flex: 1 1 0; height: 100%; display: flex; align-items: end; justify-content: center; }
+.market-trend-bars i { display: block; width: 75%; max-width: 32px; background: var(--ink); }
+.market-trend-axis { position: relative; height: 28px; margin-top: 10px; }
+.market-trend-axis span { position: absolute; width: 48px; transform: translateX(-50%); text-align: center; white-space: nowrap; color: var(--muted); font: 11px/1.4 var(--font-data); }
+.market-trend-details { font-size: 11px; }
+.market-trend-details summary { cursor: pointer; padding: 10px 0; }
+.market-trend-details dl { margin: 0; }
+.market-trend-details dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); font-family: var(--font-data); }
+.market-trend-details small { margin-left: 8px; color: var(--muted); }
+.market-trend-details dd { margin: 0; }
+@media (max-width: 640px) {
+  .capital-explainer { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 18px; }
+  .capital-pool-summary { grid-template-columns: minmax(0, 1fr); }
+  .capital-pool-summary > div { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 18px; }
+  .capital-pool-summary dd { margin: 0; }
+  .capital-participants dl > div, .capital-transactions dl > div { flex-wrap: wrap; gap: 8px; }
+  .capital-transactions article { padding: 18px; }
 }
