@@ -157,6 +157,66 @@ test("rendered capital page displays date evidence, third participant and no int
   assert.match(html, /2026-09-02<\/p>/);
   assert.match(html, /cost_entries/);
   assert.doesNotMatch(html, /00:00|confirmed-capital|12345678|idempotency|provenance|<table|<button|<form/);
+  assert.match(html, /Partner A 累计净投入/);
+});
+
+test("capital ledger uses compact rows without a horizontal table or oversized transaction amounts", async () => {
+  const source = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const componentSource = await readFile(new URL("../app/capital/CapitalLedgerView.tsx", import.meta.url), "utf8");
+  assert.match(componentSource, /capital-transaction-main/);
+  assert.match(source, /\.capital-transaction-main \{[^}]*grid-template-columns: 150px 100px minmax\(0, 1fr\) minmax\(120px, .7fr\) auto/);
+  assert.match(source, /\.capital-transaction-main strong \{ font: 600 15px/);
+  assert.doesNotMatch(source, /\.capital-transactions header strong \{ font: 600 24px/);
+  assert.match(source, /@media \(max-width: 640px\)[\s\S]*\.capital-transaction-main \{ grid-template-columns: minmax\(0, 1fr\) auto/);
+});
+
+test("historical funding migration contains all confirmed sources and safe compatibility checks", async () => {
+  const source = await readFile(new URL("../supabase/migrations/20260905000600_reconcile_partner_b_historical_funding.sql", import.meta.url), "utf8");
+  for (const value of ["20722.00", "327e8837-c440-4fd9-ad75-4a596db268a8", "97f2b550-e975-40d0-b2f5-51789aebb174", "f167f41e-f65b-4a7c-a86e-b1f996c4e9c8"]) assert.match(source, new RegExp(value));
+  assert.match(source, /security invoker/);
+  assert.match(source, /private\.can_write_portfolio/);
+  assert.match(source, /pg_advisory_xact_lock/);
+  assert.match(source, /partner-b-historical-funding-v1:/);
+  assert.match(source, /Existing TVS II Partner B funding/);
+  assert.match(source, /A historical cost entry already has different posted funding/);
+  assert.match(source, /v_count <> 12 or v_historical_count <> 12 or v_historical_total <> 20722\.00/);
+  assert.match(source, /Historical funding receipt conflicts with the reconciled slice/);
+  assert.doesNotMatch(source, /if v_pool <> 2673 or v_a <> 87/);
+  assert.match(source, /exact_confirmed as/);
+  assert.match(source, /v_confirmed_count <> 7 or v_pool_slice <> 2673 or v_a_slice <> 87/);
+  assert.match(source, /v_tvs_funding <> 2665/);
+  assert.match(source, /t\.purchase_order_id is not distinct from/);
+  assert.match(source, /t\.shipment_item_id is not distinct from/);
+  assert.match(source, /all_allocations\.transaction_id = t\.id\) = 1/);
+  assert.match(source, /t\.purchase_order_id = i\.purchase_order_id/);
+  assert.match(source, /t\.shipment_id = i\.shipment_id/);
+  assert.match(source, /exact_historical as/);
+  assert.match(source, /t\.occurred_at = c\.occurred_at/);
+  assert.match(source, /sale_id in \(p_t2_date_back_sale_id, v_sale\.id\)/);
+});
+
+test("capital metrics remain dynamic while accepting the reconciled 19-event totals", () => {
+  const input = ledgerInput();
+  input.participants = [
+    { participant_id: "p0", display_name: "Partner A", gross_contribution_cny: "109", reversed_or_distributed_cny: "22", net_contribution_cny: "87" },
+    { participant_id: "p1", display_name: "Partner B", gross_contribution_cny: "23387", reversed_or_distributed_cny: "0", net_contribution_cny: "23387" },
+  ];
+  input.accounts = [
+    { account_id: "pool", account_kind: "sales_proceeds_pool", participant_id: null },
+    { account_id: "a", account_kind: "participant_capital", participant_id: "p0" },
+    { account_id: "b", account_kind: "participant_capital", participant_id: "p1" },
+  ];
+  input.pools = [{ account_id: "pool", gross_inflow_cny: "7476", gross_outflow_cny: "4803", balance_cny: "2673" }];
+  input.realizedProfit = "1356";
+  input.transactions = Array.from({ length: 19 }, (_, index) => ({
+    ...input.transactions[0], id: `transaction-${index}`, amount_cny: "1", note: null,
+  }));
+  input.allocations = input.transactions.map((transaction) => ({ transaction_id: transaction.id, account_id: "pool", amount_cny: "1" }));
+  const result = projectCapitalLedger(input);
+  assert.equal(result.transactions.length, 19);
+  assert.deepEqual(result.participants.map(({ name, net }) => [name, net]), [["Partner A", 87], ["Partner B", 23387]]);
+  assert.equal(result.pool.balance, 2673);
+  assert.equal(result.realizedProfit, 1356);
 });
 
 test("rendered market chart retains every observed date bar and never renders an ISO x-axis", async () => {

@@ -925,16 +925,19 @@ button { color: inherit; }
 .capital-pool-summary > div { min-width: 0; padding: 24px; border: 1px solid var(--line); border-top: 0; }
 .capital-pool-summary dd { margin-top: 12px; font-size: clamp(20px, 2.2vw, 30px); }
 .capital-pool-summary .capital-total { background: var(--acid); }
-.capital-transactions { padding: 0; margin: 18px 0 0; list-style: none; display: grid; gap: 12px; }
-.capital-transactions li { min-width: 0; border: 1px solid var(--line); background: var(--surface); }
-.capital-transactions article { padding: 22px; }
-.capital-transactions article > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
-.capital-transactions header p { margin: 0 0 9px; color: var(--muted); font: 11px/1.6 var(--font-data); }
-.capital-transactions h3 { margin: 0; font-size: 18px; }
-.capital-transactions header strong { font: 600 24px/1.4 var(--font-data); overflow-wrap: anywhere; }
-.capital-source { margin: 16px 0 8px; font-size: 12px; overflow-wrap: anywhere; }
-.capital-transactions dl { border-top: 1px solid var(--line); }
-.capital-note { margin: 12px 0 0; padding-top: 12px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.capital-transactions { padding: 0; margin: 18px 0 0; list-style: none; border-top: 1px solid var(--line); }
+.capital-transactions li { min-width: 0; border-bottom: 1px solid var(--line); background: var(--surface); }
+.capital-transactions article { padding: 10px 14px; }
+.capital-transaction-main { min-width: 0; display: grid; grid-template-columns: 150px 100px minmax(0, 1fr) minmax(120px, .7fr) auto; align-items: baseline; gap: 12px; }
+.capital-transaction-main > p { min-width: 0; margin: 0; color: var(--muted); font: 11px/1.45 var(--font-data); overflow-wrap: anywhere; }
+.capital-transaction-main h3 { margin: 0; font-size: 13px; line-height: 1.45; }
+.capital-transaction-main .capital-source { color: var(--ink); font-family: inherit; font-size: 12px; }
+.capital-transaction-main strong { font: 600 15px/1.45 var(--font-data); white-space: nowrap; }
+.capital-allocations { min-width: 0; display: grid; gap: 2px; }
+.capital-allocations > div { min-width: 0; display: flex; justify-content: space-between; gap: 8px; padding: 0; }
+.capital-allocations dt, .capital-allocations dd { min-width: 0; margin: 0; font-size: 11px; line-height: 1.45; }
+.capital-allocations dd { flex: 0 0 auto; text-align: right; }
+.capital-note { margin: 4px 0 0 262px; color: var(--muted); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; }
 .capital-empty { padding: 24px 0; color: var(--muted); font-size: 13px; }
 .market-trend-bars { display: flex; align-items: end; height: 130px; margin-top: 20px; gap: 0; }
 .market-trend-bars > div { min-width: 0; flex: 1 1 0; height: 100%; display: flex; align-items: end; justify-content: center; }
@@ -952,6 +955,15 @@ button { color: inherit; }
   .capital-pool-summary { grid-template-columns: minmax(0, 1fr); }
   .capital-pool-summary > div { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 18px; }
   .capital-pool-summary dd { margin: 0; }
-  .capital-participants dl > div, .capital-transactions dl > div { flex-wrap: wrap; gap: 8px; }
-  .capital-transactions article { padding: 18px; }
+  .capital-participants dl > div { flex-wrap: wrap; gap: 8px; }
+  .capital-transactions article { padding: 10px 12px; }
+  .capital-transaction-main { grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px; }
+  .capital-transaction-main > p:first-child { grid-column: 1; grid-row: 1; }
+  .capital-transaction-main h3 { grid-column: 1; grid-row: 2; }
+  .capital-transaction-main .capital-source { grid-column: 1; grid-row: 3; }
+  .capital-transaction-main strong { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  .capital-allocations { grid-column: 2; grid-row: 3; }
+  .capital-allocations > div { gap: 5px; }
+  .capital-allocations dt, .capital-allocations dd { font-size: 10px; }
+  .capital-note { margin: 5px 0 0; }
 }
