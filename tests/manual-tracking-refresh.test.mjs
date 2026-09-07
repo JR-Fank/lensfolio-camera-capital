@@ -93,6 +93,7 @@ const japanPostHtml = `
     <tr><td>100-0001</td></tr>
     <tr><td>08/27/2026 18:40</td><td>Arrival at inward office of exchange</td><td></td><td>HONG KONG</td><td>HONG KONG</td></tr>
     <tr><td></td></tr>
+    <tr><td>09/05/2026</td><td>Retention</td><td></td><td>HONG KONG</td><td>HONG KONG</td></tr>
   </table>
 `;
 
@@ -151,11 +152,13 @@ function memoryStore({ role = "owner" } = {}) {
 
 test("Japan Post parser converts JST to an unambiguous timestamptz instant", () => {
   assert.equal(parseJapanPostJstTimestamp("08/26/2026 09:15"), "2026-08-26T00:15:00.000Z");
+  assert.throws(() => parseJapanPostJstTimestamp("09/05/2026"), /无法解析日本邮政时间/);
   const events = parseJapanPostTracking(japanPostHtml);
   assert.equal(events.length, 2);
   assert.equal(events[0].occurredAt, "2026-08-26T00:15:00.000Z");
   assert.equal(events[1].occurredAt, "2026-08-27T09:40:00.000Z");
   assert.equal(events[1].statusLabel, "到达香港");
+  assert.equal(events.some((trackingEvent) => trackingEvent.rawStatus === "Retention"), false);
 });
 
 test("duplicate carrier events produce the same non-null event fingerprint", async () => {

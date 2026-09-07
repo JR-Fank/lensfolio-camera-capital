@@ -80,7 +80,7 @@ export function parseJapanPostTracking(html: string): JapanPostTrackingEvent[] {
   const events: JapanPostTrackingEvent[] = [];
   for (let index = 0; index < rows.length; index += 1) {
     const cells = rows[index];
-    if (cells.length < 5 || !/^\d{2}\/\d{2}\/\d{4}/.test(cells[0])) continue;
+    if (cells.length < 5 || !/^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}$/.test(cells[0])) continue;
     const postalCode = rows[index + 1]?.length === 1 ? rows[index + 1][0] : "";
     events.push({
       occurredAt: parseJapanPostJstTimestamp(cells[0]),
