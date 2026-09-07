@@ -198,9 +198,34 @@ type ShipmentItemRow = {
 };
 
 type ShipmentCostRow = {
+  id: string;
   source_id: string | null;
+  source_type: string;
+  cost_type: string;
+  reversal_of: string | null;
   amount_cny: number | string;
 };
+
+function postedShippingCostsByItem(costs: ShipmentCostRow[]) {
+  const originals = costs.filter((cost) => cost.cost_type === "international_shipping"
+    && cost.source_type === "shipment_item" && cost.source_id && !cost.reversal_of);
+  const reversalsByCostId = new Map<string, number>();
+  for (const cost of costs) {
+    if (cost.cost_type !== "reversal" || !cost.reversal_of) continue;
+    reversalsByCostId.set(cost.reversal_of,
+      (reversalsByCostId.get(cost.reversal_of) ?? 0) + Math.round(Number(cost.amount_cny) * 100));
+  }
+  const grossByItemId = new Map<string, number>();
+  const netByItemId = new Map<string, number>();
+  for (const cost of originals) {
+    const itemId = cost.source_id!;
+    const grossCents = Math.round(Number(cost.amount_cny) * 100);
+    grossByItemId.set(itemId, ((grossByItemId.get(itemId) ?? 0) * 100 + grossCents) / 100);
+    netByItemId.set(itemId, ((netByItemId.get(itemId) ?? 0) * 100
+      + grossCents + (reversalsByCostId.get(cost.id) ?? 0)) / 100);
+  }
+  return { grossByItemId, netByItemId };
+}
 
 type TrackingEventRow = {
   id: string;
@@ -255,10 +280,9 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       .eq("portfolio_id", portfolioId),
     supabase
       .from("cost_entries")
-      .select("source_id,amount_cny")
+      .select("id,source_id,source_type,cost_type,reversal_of,amount_cny")
       .eq("portfolio_id", portfolioId)
-      .eq("source_type", "shipment_item")
-      .eq("cost_type", "international_shipping")
+      .in("cost_type", ["international_shipping", "reversal"])
       .eq("entry_status", "posted"),
     supabase
       .from("tracking_events")
@@ -298,9 +322,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
   const assetNameById = new Map(
     dashboard.assets.map((asset) => [asset.id, `${asset.brand} ${asset.model}`])
   );
-  const postedCostByItemId = new Map(
-    costs.flatMap((cost) => cost.source_id ? [[cost.source_id, money(cost.amount_cny)] as const] : []),
-  );
+  const { grossByItemId, netByItemId: postedCostByItemId } = postedShippingCostsByItem(costs);
   const purchaseOrderById = new Map(purchaseOrders.map((order) => [order.id, order]));
   const orderedAtByAssetId = new Map(
     purchaseItems.map((item) => [
@@ -336,6 +358,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       shipmentItems.map((item) => postedCostByItemId.get(item.id) ?? 0),
     );
     const actualPaid = money(shipment.actual_paid_cny);
+    const postedGross = sum(shipmentItems.map((item) => grossByItemId.get(item.id) ?? 0));
     const weightG = nullableWhole(shipment.chargeable_weight_g);
     const carrierService = shipment.carrier?.trim() ?? "";
     if (
@@ -343,7 +366,8 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       || weightG === null
       || weightG <= 0
       || actualPaid <= 0
-      || Math.abs(postedCost - actualPaid) > 0.01
+      || shipmentItems.some((item) => !grossByItemId.has(item.id))
+      || Math.abs(postedGross - actualPaid) > 0.01
     ) return [];
 
     const shipmentEvents = canonicalizeTrackingEvents(
@@ -376,8 +400,17 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
     const latestRun = latestRunByShipment.get(shipment.id);
     const actualPaid = money(shipment.actual_paid_cny);
     const budget = money(shipment.budget_cny);
-    const shippingCny = actualPaid > 0 ? actualPaid : budget;
-    const isEstimated = actualPaid <= 0 && budget > 0;
+    const hasCompletePostedShipping = shipmentItems.length > 0
+      && shipmentItems.every((item) => postedCostByItemId.has(item.id));
+    const postedNetShipping = sum(
+      shipmentItems.map((item) => postedCostByItemId.get(item.id) ?? 0),
+    );
+    const shippingCny = hasCompletePostedShipping
+      ? postedNetShipping
+      : actualPaid > 0
+        ? actualPaid
+        : budget;
+    const isEstimated = !hasCompletePostedShipping && actualPaid <= 0 && budget > 0;
     const bareWeightG = nullableWhole(shipment.bare_weight_g);
     const chargeableWeightG = nullableWhole(shipment.chargeable_weight_g);
 

@@ -37,6 +37,41 @@ const isUuid = await loadSourceFunction(
   "../app/api/logistics/refresh/route.ts", "isUuid",
 );
 
+const postedShippingCostsByItem = await loadSourceFunction(
+  "../lib/supabase/dashboard.ts", "postedShippingCostsByItem",
+);
+
+test("posted logistics costs apply only reversals linked to their original shipping cost", () => {
+  const shipping = (id, item, amount) => ({
+    id, source_id: item, source_type: "shipment_item",
+    cost_type: "international_shipping", reversal_of: null, amount_cny: amount,
+  });
+  const reversal = (id, original, amount) => ({
+    id, source_id: "unrelated-source", source_type: "manual",
+    cost_type: "reversal", reversal_of: original, amount_cny: amount,
+  });
+  const result = postedShippingCostsByItem([
+    shipping("tvs-cost", "tvs", "132"),
+    shipping("t2-cost", "t2", "109"),
+    shipping("unchanged-cost", "unchanged", "115"),
+    reversal("tvs-refund", "tvs-cost", "-11"),
+    reversal("t2-refund", "t2-cost", "-22"),
+    reversal("other-refund", "purchase-cost", "-500"),
+  ]);
+  assert.equal(result.netByItemId.get("tvs"), 121);
+  assert.equal(result.netByItemId.get("t2"), 87);
+  assert.equal(result.netByItemId.get("unchanged"), 115);
+  assert.equal(result.grossByItemId.get("tvs"), 132);
+  assert.equal(result.grossByItemId.get("t2"), 109);
+  assert.equal(result.netByItemId.size, 3);
+  const multiple = postedShippingCostsByItem([
+    shipping("cost", "item", 132),
+    reversal("first", "cost", -10),
+    reversal("second", "cost", -1),
+  ]);
+  assert.equal(multiple.netByItemId.get("item"), 121);
+});
+
 test("internal shipment provenance is replaced with a user-facing logistics name", () => {
   for (const suffix of ["t2", "tvs", "future-shipment"]) {
     const shipment = { id: SHIPMENT_ID, legacy_id: `confirmed-capital-source-v1:${suffix}` };
