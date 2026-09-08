@@ -6,11 +6,9 @@ import {
   type ParticipantRow, type PoolRow, type SourceRow, type TransactionRow,
 } from "../capital-ledger";
 import { getPortfolioAccess } from "./portfolio-access";
-import { createClient } from "./server";
 
 export const getCapitalLedgerData = cache(async () => {
-  const { portfolioId } = await getPortfolioAccess();
-  const supabase = await createClient();
+  const { portfolioId, supabase } = await getPortfolioAccess();
 
   // Read every page; PostgREST's default row cap must not silently truncate the ledger.
   async function all<T>(table: string, columns: string, order: string, postedOnly = false): Promise<T[]> {

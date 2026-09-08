@@ -314,7 +314,10 @@ test("entry and review enforce role, sold lifecycle, pending review, and termina
   assert.match(page, /\.from\("sales"\)[\s\S]*\.eq\("status", "sold"\)/);
   assert.match(page, /asset\.operational_status === "sold" \|\| Boolean\(completedSale\)/);
   assert.match(page, /已出售资产不再更新估值/);
-  assert.match(page, /membership\?\.role === "owner" \|\| membership\?\.role === "editor"/);
+  assert.match(page, /getPortfolioAccess\(\)/);
+  assert.match(page, /portfolioCanWrite && portfolioId === asset\.portfolio_id/);
+  const access = await readFile(new URL("../lib/supabase/portfolio-access.ts", import.meta.url), "utf8");
+  assert.match(access, /membership\.role === "owner" \|\| membership\.role === "editor"/);
   assert.match(page, /canWrite=\{canWrite\}/);
   assert.match(intake, /if \(!canWrite \|\| busy\) return/);
   assert.match(intake, /当前账户只有查看权限，不能创建估值研究/);

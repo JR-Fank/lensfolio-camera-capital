@@ -122,9 +122,9 @@ export type RepairView = {
   costCny: number;
   vendor: string | null;
   resultingStatus: string;
-  valueBeforeCny: number;
-  valueAfterCny: number;
-  valueChangeCny: number;
+  valueBeforeCny: number | null;
+  valueAfterCny: number | null;
+  valueChangeCny: number | null;
   notes: string | null;
 };
 

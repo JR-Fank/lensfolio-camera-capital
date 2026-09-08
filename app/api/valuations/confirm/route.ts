@@ -1,3 +1,4 @@
+import { writeAccessError } from "../../../../lib/supabase/write-access";
 import { createClient } from "../../../../lib/supabase/server";
 import {
   confirmValuationResearchRun,
@@ -15,6 +16,9 @@ export async function POST(request: Request) {
     if (error || !data.user) {
       return Response.json({ error: "请先登录 Lensfolio。" }, { status: 401 });
     }
+    const accessError = await writeAccessError(supabase);
+    if (accessError) return accessError;
+
     const body = await request.json() as { runId?: unknown };
     const runId = typeof body.runId === "string" ? body.runId.trim() : "";
     if (!uuidPattern.test(runId)) {

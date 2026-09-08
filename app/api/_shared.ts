@@ -1,21 +1,17 @@
+import { createClient } from "../../lib/supabase/server";
+import { writeAccessError as sessionWriteAccessError } from "../../lib/supabase/write-access";
 import { env } from "cloudflare:workers";
 import {
-  AUTHENTICATION_REQUIRED_MESSAGE,
   isMigrationReadOnly,
   MIGRATION_PROTECTION_MESSAGE,
 } from "../../lib/migration-protection";
 
-export function writeAccessError(request: Request) {
+export async function writeAccessError(_request: Request) {
+  const accessError = await sessionWriteAccessError(await createClient());
+  if (accessError) return accessError;
   if (isMigrationReadOnly(env)) {
     return Response.json({ error: MIGRATION_PROTECTION_MESSAGE }, { status: 423 });
   }
-
-  const userId = request.headers.get("oai-authenticated-user-id")?.trim();
-  const email = request.headers.get("oai-authenticated-user-email")?.trim();
-  if (!userId || !email) {
-    return Response.json({ error: AUTHENTICATION_REQUIRED_MESSAGE }, { status: 401 });
-  }
-
   return null;
 }
 

@@ -1,3 +1,4 @@
+import { writeAccessError } from "../../../../lib/supabase/write-access";
 import { createClient } from "../../../../lib/supabase/server";
 import {
   cancelValuationResearchRun,
@@ -78,6 +79,8 @@ async function authenticatedRequest() {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) throw new ValuationWorkflowError("请先登录 Lensfolio。", 401);
+  const accessError = await writeAccessError(supabase);
+  if (accessError) throw new ValuationWorkflowError("当前账户没有写入权限。", accessError.status);
   return { supabase, user: data.user };
 }
 

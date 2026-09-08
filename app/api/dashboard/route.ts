@@ -1,8 +1,8 @@
-import { getDashboardData } from "../../../db/queries";
+import { getSupabaseDashboardData } from "../../../lib/supabase/dashboard";
 
 export async function GET() {
   try {
-    return Response.json(await getDashboardData());
+    return Response.json(await getSupabaseDashboardData());
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "无法读取投资组合数据" },

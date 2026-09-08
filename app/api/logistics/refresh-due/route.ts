@@ -3,7 +3,7 @@ import { refreshDueTracking } from "../../../../db/tracking";
 import { jsonError, writeAccessError } from "../../_shared";
 
 export async function POST(request: Request) {
-  const accessError = writeAccessError(request);
+  const accessError = await writeAccessError(request);
   if (accessError) return accessError;
 
   try {

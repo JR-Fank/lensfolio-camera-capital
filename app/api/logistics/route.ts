@@ -2,7 +2,7 @@ import { getD1 } from "../../../db";
 import { booleanValue, jsonError, numberValue, readObject, text, writeAccessError } from "../_shared";
 
 export async function POST(request: Request) {
-  const accessError = writeAccessError(request);
+  const accessError = await writeAccessError(request);
   if (accessError) return accessError;
 
   try {

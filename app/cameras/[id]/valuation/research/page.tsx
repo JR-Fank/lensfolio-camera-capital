@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { getAssetLocalizedName } from "../../../../../lib/asset-display-names";
-import { createClient } from "../../../../../lib/supabase/server";
+import { getPortfolioAccess } from "../../../../../lib/supabase/portfolio-access";
 import { normalizeSearchTerms } from "../../../../../lib/valuation/xianyu";
 import ValuationResearchIntake from "./ValuationResearchIntake";
 
@@ -13,9 +13,7 @@ export default async function StartValuationResearchPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData.user) redirect("/login");
+  const { supabase, canWrite: portfolioCanWrite, portfolioId } = await getPortfolioAccess();
   const { data: asset, error } = await supabase
     .from("assets")
     .select("id,portfolio_id,brand,model,operational_status")
@@ -23,25 +21,16 @@ export default async function StartValuationResearchPage({
     .maybeSingle();
   if (error) throw new Error(`Asset query failed: ${error.message}`);
   if (!asset) notFound();
-  const [{ data: membership, error: membershipError }, { data: completedSale, error: saleError }] = await Promise.all([
-    supabase
-      .from("portfolio_members")
-      .select("role")
-      .eq("portfolio_id", asset.portfolio_id)
-      .eq("user_id", authData.user.id)
-      .maybeSingle(),
-    supabase
-      .from("sales")
-      .select("id")
-      .eq("portfolio_id", asset.portfolio_id)
-      .eq("asset_id", asset.id)
-      .eq("status", "sold")
-      .limit(1)
-      .maybeSingle(),
-  ]);
-  if (membershipError) throw new Error(`Portfolio role query failed: ${membershipError.message}`);
+  const { data: completedSale, error: saleError } = await supabase
+    .from("sales")
+    .select("id")
+    .eq("portfolio_id", asset.portfolio_id)
+    .eq("asset_id", asset.id)
+    .eq("status", "sold")
+    .limit(1)
+    .maybeSingle();
   if (saleError) throw new Error(`Sale lifecycle query failed: ${saleError.message}`);
-  const canWrite = membership?.role === "owner" || membership?.role === "editor";
+  const canWrite = portfolioCanWrite && portfolioId === asset.portfolio_id;
   const sold = asset.operational_status === "sold" || Boolean(completedSale);
   const localizedName = getAssetLocalizedName(asset.brand, asset.model);
   const terms = normalizeSearchTerms(asset);

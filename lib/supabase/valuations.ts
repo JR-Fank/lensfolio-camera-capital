@@ -29,11 +29,9 @@ export type ValuationResearchRun = {
   confidence: number | null;
   methodology: string | null;
   price_semantics: "asking_price";
-  error_message: string | null;
+  error_message?: string | null;
   created_at: string;
-  created_by: string;
   confirmed_at: string | null;
-  confirmed_by: string | null;
   confirmed_snapshot_id: string | null;
 };
 
@@ -54,8 +52,6 @@ export type ValuationResearchListing = {
   condition_text: string | null;
   review_status: ListingReviewStatus;
   exclusion_reason: ExclusionReason | null;
-  listing_fingerprint: string;
-  metadata: Record<string, unknown>;
   observed_at: string;
 };
 
@@ -86,8 +82,8 @@ function databaseError(error: { message?: string; code?: string } | null, fallba
   return new ValuationWorkflowError(error?.message || fallback, 500);
 }
 
-const runSelect = "id,portfolio_id,asset_id,market_source_id,status,search_terms,raw_count,deduplicated_count,included_count,p25_cny,median_cny,p75_cny,sample_count,confidence,methodology,price_semantics,error_message,created_at,created_by,confirmed_at,confirmed_by,confirmed_snapshot_id";
-const listingSelect = "id,portfolio_id,market_source_id,asset_id,research_run_id,external_listing_id,title,listing_url,asking_price,currency,seller_name,listed_at,captured_at,condition_text,review_status,exclusion_reason,listing_fingerprint,metadata,observed_at";
+const runSelect = "id,portfolio_id,asset_id,market_source_id,status,search_terms,raw_count,deduplicated_count,included_count,p25_cny,median_cny,p75_cny,sample_count,confidence,methodology,price_semantics,created_at,confirmed_at,confirmed_snapshot_id";
+const listingSelect = "id,portfolio_id,market_source_id,asset_id,research_run_id,external_listing_id,title,listing_url,asking_price,currency,seller_name,listed_at,captured_at,condition_text,review_status,exclusion_reason,observed_at";
 
 export async function getValuationResearchRun(supabase: SupabaseClient, runId: string) {
   const { data, error } = await supabase

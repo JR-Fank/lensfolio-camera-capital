@@ -1,13 +1,12 @@
 import "server-only";
 
 import { cache } from "react";
-import { redirect } from "next/navigation";
 import type { AssetView, DashboardData, LogisticsEventView, LogisticsView, SaleView, ValuationHistoryView } from "../../db/queries";
 import { calculateHoldingDays } from "../holding-days";
 import { buildLogisticsBenchmarks, type LogisticsCostSample } from "../logistics-benchmark";
 import { canonicalizeTrackingEvents, deriveTransitDuration } from "../tracking/transit-duration";
 import { projectAssetValuation, projectPortfolioValuation } from "../valuation-semantics";
-import { createClient } from "./server";
+import { getPortfolioAccess } from "./portfolio-access";
 
 type QueryResult<T = unknown> = { data: T | null; error: { message: string } | null };
 type AssetRow = {
@@ -77,20 +76,7 @@ const purchaseOrderSelect = "id,vendor,platform,order_reference,original_currenc
 const saleSelect = "id,asset_id,status,platform,listing_price_cny,sold_price_cny,net_proceeds_cny,platform_fees_cny,outbound_shipping_cny,listed_at,sold_at";
 
 async function sessionPortfolio() {
-  const supabase = await createClient();
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData.user) redirect("/login");
-
-  const portfoliosResult = await supabase
-    .from("portfolios")
-    .select("id,name")
-    .order("created_at", { ascending: true })
-    .limit(2);
-  const portfolios = rows<{ id: string; name: string }>("portfolio", portfoliosResult);
-  if (portfolios.length !== 1) {
-    throw new Error(`Expected one RLS-visible portfolio, found ${portfolios.length}.`);
-  }
-  return { supabase, portfolioId: portfolios[0].id };
+  return getPortfolioAccess();
 }
 
 export const getSupabaseDashboardData = cache(async (): Promise<DashboardData> => {
@@ -244,7 +230,7 @@ type TrackingSyncRunRow = {
   shipment_id: string | null;
   finished_at: string | null;
   status: string;
-  error_message: string | null;
+  error_message?: string | null;
 };
 
 type LogisticsPurchaseItemRow = {
@@ -266,7 +252,7 @@ type LogisticsReferenceRow = {
 
 export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> => {
   const dashboard = await getSupabaseDashboardData();
-  const { supabase, portfolioId } = await sessionPortfolio();
+  const { supabase, portfolioId, canWrite } = await sessionPortfolio();
 
   const [shipmentsResult, itemsResult, costsResult, eventsResult, syncRunsResult, purchaseItemsResult, purchaseOrdersResult, referencesResult] = await Promise.all([
     supabase
@@ -291,7 +277,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
       .order("occurred_at", { ascending: true }),
     supabase
       .from("tracking_sync_runs")
-      .select("shipment_id,finished_at,status,error_message")
+      .select(canWrite ? "shipment_id,finished_at,status,error_message" : "shipment_id,finished_at,status")
       .eq("portfolio_id", portfolioId)
       .not("finished_at", "is", null)
       .order("finished_at", { ascending: false }),
@@ -474,7 +460,7 @@ export const getSupabaseLogisticsData = cache(async (): Promise<DashboardData> =
         ? "Japan Post public tracking"
         : null,
       trackingError: latestRun?.status === "failed"
-        ? latestRun.error_message
+        ? latestRun.error_message ?? "物流同步失败"
         : null,
       anomaly: null,
       notes: shipment.legacy_status,
@@ -826,3 +812,25 @@ function saleStatus(value: string) {
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
+
+export const getSupabaseRepairsData = cache(async (): Promise<DashboardData> => {
+  const dashboard = await getSupabaseDashboardData();
+  const { supabase, portfolioId } = await sessionPortfolio();
+  const { data, error } = await supabase.from("repairs")
+    .select("id,asset_id,vendor,description,status,amount_cny,started_at,completed_at")
+    .eq("portfolio_id", portfolioId).order("started_at", { ascending: false });
+  if (error) throw new Error("维修记录读取失败，请稍后重试。");
+  const assets = new Map(dashboard.assets.map((asset) => [asset.id, asset]));
+  return { ...dashboard, repairs: (data ?? []).map((repair) => {
+    const asset = assets.get(repair.asset_id);
+    return {
+      id: repair.id, cameraId: repair.asset_id,
+      cameraName: asset ? `${asset.brand} ${asset.model}` : "—",
+      repairDate: repair.completed_at ?? repair.started_at ?? "—",
+      problem: repair.description, workPerformed: "", costCny: money(repair.amount_cny),
+      vendor: repair.vendor, resultingStatus: repair.status,
+      // This schema has no before/after valuation evidence for a repair.
+      valueBeforeCny: null, valueAfterCny: null, valueChangeCny: null, notes: null,
+    };
+  }) };
+});

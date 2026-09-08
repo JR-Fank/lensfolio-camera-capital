@@ -14,6 +14,13 @@ function publicConfiguration() {
   return { url, publishableKey };
 }
 
+export function createPublicClient() {
+  const { url, publishableKey } = publicConfiguration();
+  return createServerClient(url, publishableKey, {
+    cookies: { getAll: () => [], setAll: () => {} },
+  });
+}
+
 export async function createClient() {
   const { url, publishableKey } = publicConfiguration();
   const cookieStore = await cookies();

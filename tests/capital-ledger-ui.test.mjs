@@ -228,11 +228,11 @@ test("rendered market chart retains every observed date bar and never renders an
   assert.match(html, /market-trend-axis/);
 });
 
-test("reader is session/RLS scoped, paginated, posted only, and does not select provenance or mutate", async () => {
+test("reader uses the authorized public/session RLS client, is paginated, posted only, and does not select provenance or mutate", async () => {
   const source = await readFile(new URL("../lib/supabase/capital-ledger.ts", import.meta.url), "utf8");
   assert.match(source, /import "server-only"/);
   assert.match(source, /getPortfolioAccess\(\)/);
-  assert.match(source, /createClient\(\)/);
+  assert.match(source, /const \{ portfolioId, supabase \} = await getPortfolioAccess\(\)/);
   assert.match(source, /\.eq\("portfolio_id", portfolioId\)/);
   assert.match(source, /\.range\(offset, offset \+ pageSize - 1\)/);
   assert.match(source, /\.eq\("transaction_status", "posted"\)/);

@@ -1,3 +1,4 @@
+import { writeAccessError } from "../../../../lib/supabase/write-access";
 import { createClient } from "../../../../lib/supabase/server";
 import {
   refreshSupabaseShipmentTracking,
@@ -17,6 +18,9 @@ export async function POST(request: Request) {
     if (error || !data.user) {
       return Response.json({ error: "请先登录 Lensfolio。" }, { status: 401 });
     }
+
+    const accessError = await writeAccessError(supabase);
+    if (accessError) return accessError;
 
     const body = await request.json() as { shipmentId?: unknown };
     const shipmentId = String(body.shipmentId ?? "").trim();

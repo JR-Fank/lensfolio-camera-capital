@@ -2,7 +2,7 @@ import { getD1 } from "../../../db";
 import { jsonError, numberValue, readObject, slug, text, valuationConfidence, writeAccessError } from "../_shared";
 
 export async function POST(request: Request) {
-  const accessError = writeAccessError(request);
+  const accessError = await writeAccessError(request);
   if (accessError) return accessError;
 
   try {
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const accessError = writeAccessError(request);
+  const accessError = await writeAccessError(request);
   if (accessError) return accessError;
 
   try {
