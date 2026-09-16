@@ -2,6 +2,20 @@
 
 Open-source inventory, valuation and capital management system for camera collectors, resellers and photography businesses.
 
+## Screenshots
+
+### Dashboard
+
+![Lensfolio Dashboard](docs/screenshots/dashboard.png)
+
+### Camera Detail
+
+![Camera Detail](docs/screenshots/camera-detail.png)
+
+### Capital & Valuation
+
+![Capital and Valuation](docs/screenshots/capital.png)
+
 ## Features
 
 - Camera inventory management
